@@ -1,8 +1,13 @@
-// In development: uses current hostname (localhost)
-// In production (Vercel): uses VITE_BACKEND_URL env variable pointing to RunPod
+// Backend — Debian PC (alert logic, incidents, recordings metadata)
 const BACKEND = import.meta.env.VITE_BACKEND_URL
-  ? import.meta.env.VITE_BACKEND_URL.replace(/\/$/, "") // strip trailing slash
+  ? import.meta.env.VITE_BACKEND_URL.replace(/\/$/, "")
   : `${window.location.protocol}//${window.location.hostname}:8000`;
+
+// Stream server — Windows laptop (live MJPEG video feeds)
+// Falls back to BACKEND if VITE_STREAM_URL not set
+const STREAM_SERVER = import.meta.env.VITE_STREAM_URL
+  ? import.meta.env.VITE_STREAM_URL.replace(/\/$/, "")
+  : BACKEND;
 
 const resolveUrl = (url) => {
   if (!url) return url;
@@ -64,4 +69,4 @@ function fireNotification(title, body) {
   }
 }
 
-export { BACKEND, resolveUrl, api, requestNotifPermission, fireNotification };
+export { BACKEND, STREAM_SERVER, resolveUrl, api, requestNotifPermission, fireNotification };

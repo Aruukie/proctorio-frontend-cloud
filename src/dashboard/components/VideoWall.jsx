@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BACKEND } from "../api";
+import { BACKEND, STREAM_SERVER } from "../api";
 
 export default function VideoWall({ cameras, isAlert, isRecording, recCountdown, recLabel, session, layout = "auto" }) {
   const [reloadByCam, setReloadByCam] = useState({});
@@ -72,7 +72,7 @@ export default function VideoWall({ cameras, isAlert, isRecording, recCountdown,
 
   const modalCam = modalCamId ? cameras.find((c) => c.camera_id === modalCamId) : null;
   const modalFeedUrl = modalCam
-    ? `${BACKEND}/video_feed?cam=${encodeURIComponent(modalCam.camera_id)}&v=${reloadByCam[modalCam.camera_id] || 0}`
+    ? `${STREAM_SERVER}/video_feed?cam=${encodeURIComponent(modalCam.camera_id)}&v=${reloadByCam[modalCam.camera_id] || 0}`
     : null;
   const modalIsRecording = Boolean(
     modalCam && isRecording && recLabel && recLabel.startsWith(`${modalCam.camera_id}:`)
@@ -85,7 +85,7 @@ export default function VideoWall({ cameras, isAlert, isRecording, recCountdown,
           const camId = cam.camera_id;
           const camMeta = cam.type === "local" ? "LOCAL" : `RTSP · ${cam.ip}`;
           const camRecording = Boolean(isRecording && recLabel && recLabel.startsWith(`${camId}:`));
-          const feedUrl = `${BACKEND}/video_feed?cam=${encodeURIComponent(camId)}&v=${reloadByCam[camId] || 0}`;
+          const feedUrl = `${STREAM_SERVER}/video_feed?cam=${encodeURIComponent(camId)}&v=${reloadByCam[camId] || 0}`;
 
           return (
             <div key={camId} className="video-tile viewing">
