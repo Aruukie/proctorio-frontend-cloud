@@ -1,10 +1,9 @@
-// Backend — Debian PC (alert logic, incidents, recordings metadata)
-const BACKEND = const BACKEND = import.meta.env.VITE_BACKEND_URL ? import.meta.env.VITE_BACKEND_URL : `${window.location.protocol}//${window.location.hostname}:8000`;
+// Backend — Google Cloud VM (alert logic, incidents, recordings metadata)
+const BACKEND = import.meta.env.VITE_BACKEND_URL
   ? import.meta.env.VITE_BACKEND_URL.replace(/\/$/, "")
   : `${window.location.protocol}//${window.location.hostname}:8000`;
 
 // Stream server — Windows laptop (live MJPEG video feeds)
-// Falls back to BACKEND if VITE_STREAM_URL not set
 const STREAM_SERVER = import.meta.env.VITE_STREAM_URL
   ? import.meta.env.VITE_STREAM_URL.replace(/\/$/, "")
   : BACKEND;
@@ -38,6 +37,7 @@ const api = {
       body: JSON.stringify(d),
     }).then((r) => r.json()),
   addLocalCamera: () => fetch(`${BACKEND}/cameras/add_local`, { method: "POST" }).then((r) => r.json()),
+  refreshStream: () => fetch(`${STREAM_SERVER}/refresh`, { method: "POST" }).then((r) => r.json()),
 };
 
 let notifPermission = "default";
