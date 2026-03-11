@@ -1,5 +1,5 @@
 // Backend — Debian PC (alert logic, incidents, recordings metadata)
-const BACKEND = import.meta.env.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
+const BACKEND = const BACKEND = import.meta.env.VITE_BACKEND_URL ? import.meta.env.VITE_BACKEND_URL : `${window.location.protocol}//${window.location.hostname}:8000`;
   ? import.meta.env.VITE_BACKEND_URL.replace(/\/$/, "")
   : `${window.location.protocol}//${window.location.hostname}:8000`;
 
