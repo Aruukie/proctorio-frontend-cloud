@@ -101,9 +101,45 @@ export default function ExamProctorDashboard() {
     });
   }, [incidents, studentsTracked, sysStatus, session]);
 
+  // ── Web Push registration ────────────────────────────────────────────────────
+  const _swReg = useRef(null);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((reg) => { _swReg.current = reg; })
+      .catch((e) => console.warn("[SW] Registration failed:", e));
+  }, []);
+
+  const _subscribeToPush = async () => {
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") return;
+
+      const reg = _swReg.current || (await navigator.serviceWorker.ready);
+      const { key } = await api.vapidPublicKey();
+
+      // Convert base64url VAPID public key → Uint8Array
+      const b64 = (key + "=".repeat((4 - (key.length % 4)) % 4))
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
+      const raw = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: raw,
+      });
+      await api.pushSubscribe(sub.toJSON());
+    } catch (e) {
+      console.warn("[Push] Subscribe failed:", e);
+    }
+  };
+
   const handleSessionStart = (sess) => {
     setSession(sess);
     requestNotifPermission();
+    _subscribeToPush();
   };
 
   const handleEndSession = () => {

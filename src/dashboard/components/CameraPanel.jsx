@@ -9,6 +9,7 @@ export default function CameraPanel({ onCamerasUpdate }) {
   const [camName, setCamName] = useState("");
   const [adding, setAdding] = useState(false);
   const [addResult, setAddResult] = useState(null);
+  const [removingId, setRemovingId] = useState(null);
 
   const fetchCameras = useCallback(async () => {
     try {
@@ -28,6 +29,19 @@ export default function CameraPanel({ onCamerasUpdate }) {
     const t = setInterval(fetchCameras, 8000);
     return () => clearInterval(t);
   }, [fetchCameras]);
+
+  const handleRemove = async (camId) => {
+    if (!window.confirm(`Remove camera "${camId}"?`)) return;
+    setRemovingId(camId);
+    try {
+      await api.removeCamera(camId);
+      await fetchCameras();
+    } catch {
+      // silently ignore — list will refresh on next poll
+    } finally {
+      setRemovingId(null);
+    }
+  };
 
   const handleAdd = async () => {
     if (!rtspUrl.trim()) return;
@@ -132,6 +146,24 @@ export default function CameraPanel({ onCamerasUpdate }) {
               <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                 {isViewing && <span className="cam-active-badge">● VIEWING</span>}
                 {!connected && <span className="cam-err-badge">ERR</span>}
+                <button
+                  onClick={() => handleRemove(cam.camera_id)}
+                  disabled={removingId === cam.camera_id}
+                  title="Remove camera"
+                  style={{
+                    background: "none",
+                    border: "1px solid #ef444466",
+                    borderRadius: 3,
+                    color: "#ef4444",
+                    cursor: "pointer",
+                    fontSize: 9,
+                    padding: "2px 5px",
+                    letterSpacing: ".05em",
+                    opacity: removingId === cam.camera_id ? 0.5 : 1,
+                  }}
+                >
+                  {removingId === cam.camera_id ? "..." : "✕"}
+                </button>
               </div>
             </div>
           );

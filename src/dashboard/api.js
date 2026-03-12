@@ -37,7 +37,21 @@ const api = {
       body: JSON.stringify(d),
     }).then((r) => r.json()),
   addLocalCamera: () => fetch(`${BACKEND}/cameras/add_local`, { method: "POST" }).then((r) => r.json()),
+  removeCamera: (id) => fetch(`${BACKEND}/cameras/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) => r.json()),
   refreshStream: () => fetch(`${STREAM_SERVER}/refresh`, { method: "POST" }).then((r) => r.json()),
+  vapidPublicKey: () => fetch(`${BACKEND}/push/vapid-public-key`).then((r) => r.json()),
+  pushSubscribe: (subscription) =>
+    fetch(`${BACKEND}/push/subscribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscription }),
+    }).then((r) => r.json()),
+  pushUnsubscribe: (subscription) =>
+    fetch(`${BACKEND}/push/unsubscribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscription }),
+    }).then((r) => r.json()),
 };
 
 let notifPermission = "default";
