@@ -1,7 +1,7 @@
 import { statusColors } from "../utils";
 
 function StatusBadge({ status }) {
-  const color = statusColors[status] || "#15803d";
+  const color = statusColors[status] || "#f59e0b";
   const pulse = status === "ALERT" || status === "RECORDING";
   return (
     <span className="status-badge" style={{ borderColor: color, color }}>

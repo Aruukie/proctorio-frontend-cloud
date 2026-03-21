@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { resolveUrl } from "../api";
-import { agoStr, fmt } from "../utils";
+import { agoStr, fmtDateTime } from "../utils";
 
 function RecordingCard({ rec }) {
   const [expanded, setExpanded] = useState(false);
@@ -25,9 +25,9 @@ function RecordingCard({ rec }) {
           )}
           <div>
             <div className="rec-type" style={{ color: isLive ? "#ef4444" : "#166534" }}>
-              {rec.label || rec.name}
+              {rec.display_label || rec.label || rec.name}
             </div>
-            <div className="rec-meta">{fmt(rec.created_at)}</div>
+            <div className="rec-meta">{rec.display_meta || fmtDateTime(rec.created_at)}</div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -111,6 +111,14 @@ function IncidentRow({ incident, onReview, linkedRec, isLiveRecording }) {
   }, [incident.created_at]);
 
   const unrev = incident.status === "UNREVIEWED";
+  const title = `${incident.student_id || "UNKNOWN"}: ${incident.incident_type || "UNKNOWN"}`;
+  const meta = [
+    incident.confidence > 0 ? `${(incident.confidence * 100).toFixed(1)}% confidence` : null,
+    incident.camera_id || "-",
+    fmtDateTime(incident.created_at),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="incident-block" style={{ animation: "fadeIn .4s ease" }}>
@@ -127,7 +135,7 @@ function IncidentRow({ incident, onReview, linkedRec, isLiveRecording }) {
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="incident-type" style={{ color: unrev ? "#14532d" : "#15803d" }}>
-            {incident.incident_type}
+            {title}
             {isLiveRecording && (
               <span
                 style={{
@@ -145,14 +153,7 @@ function IncidentRow({ incident, onReview, linkedRec, isLiveRecording }) {
               <span style={{ marginLeft: 6, fontSize: 7, color: "#0891b2", letterSpacing: ".1em" }}>CLIP</span>
             )}
           </div>
-          <div className="incident-meta">
-            {fmt(incident.created_at)} - {incident.camera_id} - {incident.student_id || "-"}
-            {incident.confidence > 0 && (
-              <span style={{ marginLeft: 5, color: "#16a34a", fontVariantNumeric: "tabular-nums" }}>
-                {(incident.confidence * 100).toFixed(1)}%
-              </span>
-            )}
-          </div>
+          <div className="incident-meta">{meta}</div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>

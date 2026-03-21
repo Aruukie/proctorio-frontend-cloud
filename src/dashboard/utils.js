@@ -1,13 +1,37 @@
-const fmt = (d) =>
-  new Date(d).toLocaleTimeString("en-US", {
+const _safeDate = (d) => {
+  const dt = new Date(d);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
+
+const fmt = (d) => {
+  const dt = _safeDate(d);
+  if (!dt) return "--:--:--";
+  return dt.toLocaleTimeString("en-US", {
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
   });
+};
+
+const fmtDateTime = (d) => {
+  const dt = _safeDate(d);
+  if (!dt) return "--";
+  return dt.toLocaleString("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+};
 
 const agoStr = (d) => {
-  const s = Math.floor((Date.now() - new Date(d)) / 1000);
+  const dt = _safeDate(d);
+  if (!dt) return "just now";
+  const s = Math.max(0, Math.floor((Date.now() - dt.getTime()) / 1000));
   return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : `${Math.floor(s / 3600)}h ago`;
 };
 
@@ -22,27 +46,57 @@ const generateSessionId = () => {
 };
 
 const statusColors = {
-  CONNECTING: "#15803d",
+  CONNECTING: "#f59e0b",
+  OFFLINE: "#ef4444",
   CALIBRATING: "#16a34a",
   NORMAL: "#16a34a",
   ALERT: "#ef4444",
   RECORDING: "#ef4444",
 };
 
+const normalizeLabel = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
 function findLinkedRecording(incident, recordings) {
   if (!recordings || recordings.length === 0) return null;
   const incTime = new Date(incident.created_at).getTime();
+  const LINK_WINDOW_MS = 5 * 60 * 1000;
+  const incidentLabel = normalizeLabel(incident.incident_type);
+  const incidentCamera = String(incident.camera_id || "").trim();
+
   let best = null;
+  let bestScore = -1;
   let bestDelta = Infinity;
+
   for (const rec of recordings) {
     if (!rec.url) continue;
-    const recTime = new Date(rec.created_at).getTime();
+    const recAt = rec.recorded_at || rec.created_at;
+    const recTime = new Date(recAt).getTime();
+    if (Number.isNaN(recTime)) continue;
     const delta = Math.abs(recTime - incTime);
-    if (delta < 60000 && delta < bestDelta) {
-      bestDelta = delta;
+    if (delta > LINK_WINDOW_MS) continue;
+
+    const recLabel = normalizeLabel(rec.label || rec.name);
+    const recCamera = String(rec.camera_id || "").trim();
+    const sameCamera = incidentCamera && recCamera && incidentCamera === recCamera;
+    const labelMatch =
+      incidentLabel &&
+      (recLabel === incidentLabel ||
+        recLabel.includes(incidentLabel) ||
+        incidentLabel.includes(recLabel));
+
+    const score = (sameCamera ? 2 : 0) + (labelMatch ? 1 : 0);
+    if (score > bestScore || (score === bestScore && delta < bestDelta)) {
       best = rec;
+      bestScore = score;
+      bestDelta = delta;
     }
   }
+
   return best;
 }
 
@@ -73,7 +127,15 @@ const buildPerfSnapshot = ({ incidents, studentsTracked, sysStatus }) => {
   const accuracy = accDen > 0 ? (tp + tn) / accDen : 0;
   const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
   const siteHealth =
-    sysStatus === "CONNECTING" ? 0 : sysStatus === "RECORDING" ? 0.96 : sysStatus === "ALERT" ? 0.9 : 0.98;
+    sysStatus === "OFFLINE"
+      ? 0
+      : sysStatus === "CONNECTING"
+        ? 0.2
+        : sysStatus === "RECORDING"
+          ? 0.96
+          : sysStatus === "ALERT"
+            ? 0.9
+            : 0.98;
 
   return {
     ts: new Date().toISOString(),
@@ -86,4 +148,4 @@ const buildPerfSnapshot = ({ incidents, studentsTracked, sysStatus }) => {
   };
 };
 
-export { fmt, agoStr, fmtUptime, generateSessionId, statusColors, findLinkedRecording, buildPerfSnapshot };
+export { fmt, fmtDateTime, agoStr, fmtUptime, generateSessionId, statusColors, findLinkedRecording, buildPerfSnapshot };

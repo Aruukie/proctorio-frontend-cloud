@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api } from "../api";
+import { api, requestNotifPermission } from "../api";
 import { generateSessionId } from "../utils";
 
 export default function SessionGate({ onSessionStart }) {
@@ -19,11 +19,13 @@ export default function SessionGate({ onSessionStart }) {
     }
     setLoading(true);
     setError("");
+    // Mobile browsers require this prompt to be triggered directly by user gesture.
+    await requestNotifPermission();
     try {
       await api.createSession({ session_id: id, session_name: name || id });
       onSessionStart({ session_id: id, session_name: name || id });
     } catch {
-      setError("Could not connect to backend. Make sure server.py is running.");
+      setError("Backend is offline. Session was not started.");
     } finally {
       setLoading(false);
     }

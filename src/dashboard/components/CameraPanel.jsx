@@ -8,8 +8,8 @@ export default function CameraPanel({ onCamerasUpdate }) {
   const [rtspUrl, setRtspUrl] = useState("");
   const [camName, setCamName] = useState("");
   const [adding, setAdding] = useState(false);
+  const [closingId, setClosingId] = useState("");
   const [addResult, setAddResult] = useState(null);
-  const [removingId, setRemovingId] = useState(null);
 
   const fetchCameras = useCallback(async () => {
     try {
@@ -29,19 +29,6 @@ export default function CameraPanel({ onCamerasUpdate }) {
     const t = setInterval(fetchCameras, 8000);
     return () => clearInterval(t);
   }, [fetchCameras]);
-
-  const handleRemove = async (camId) => {
-    if (!window.confirm(`Remove camera "${camId}"?`)) return;
-    setRemovingId(camId);
-    try {
-      await api.removeCamera(camId);
-      await fetchCameras();
-    } catch {
-      // silently ignore — list will refresh on next poll
-    } finally {
-      setRemovingId(null);
-    }
-  };
 
   const handleAdd = async () => {
     if (!rtspUrl.trim()) return;
@@ -63,6 +50,25 @@ export default function CameraPanel({ onCamerasUpdate }) {
       setAddResult({ ok: false, message: "Backend unreachable" });
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleCloseCamera = async (cameraId) => {
+    if (!cameraId) return;
+    setClosingId(cameraId);
+    setAddResult(null);
+    try {
+      const res = await api.closeCamera(cameraId);
+      if (res.ok) {
+        setAddResult({ ok: true, message: `✓ ${cameraId} closed` });
+        await fetchCameras();
+      } else {
+        setAddResult({ ok: false, message: res.error || `Could not close ${cameraId}` });
+      }
+    } catch {
+      setAddResult({ ok: false, message: "Backend unreachable" });
+    } finally {
+      setClosingId("");
     }
   };
 
@@ -147,22 +153,13 @@ export default function CameraPanel({ onCamerasUpdate }) {
                 {isViewing && <span className="cam-active-badge">● VIEWING</span>}
                 {!connected && <span className="cam-err-badge">ERR</span>}
                 <button
-                  onClick={() => handleRemove(cam.camera_id)}
-                  disabled={removingId === cam.camera_id}
-                  title="Remove camera"
-                  style={{
-                    background: "none",
-                    border: "1px solid #ef444466",
-                    borderRadius: 3,
-                    color: "#ef4444",
-                    cursor: "pointer",
-                    fontSize: 9,
-                    padding: "2px 5px",
-                    letterSpacing: ".05em",
-                    opacity: removingId === cam.camera_id ? 0.5 : 1,
-                  }}
+                  className="cam-scan-btn"
+                  onClick={() => handleCloseCamera(cam.camera_id)}
+                  disabled={closingId === cam.camera_id}
+                  title={`Close ${cam.camera_id}`}
+                  style={{ padding: "2px 6px", color: "#ef4444", borderColor: "#ef444470" }}
                 >
-                  {removingId === cam.camera_id ? "..." : "✕"}
+                  {closingId === cam.camera_id ? "CLOSING..." : "CLOSE"}
                 </button>
               </div>
             </div>

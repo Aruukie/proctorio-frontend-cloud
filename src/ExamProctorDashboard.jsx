@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, fireNotification, requestNotifPermission } from "./dashboard/api";
+import { api, fireNotification } from "./dashboard/api";
 import { buildPerfSnapshot, findLinkedRecording, fmt, fmtUptime } from "./dashboard/utils";
 import { dashboardStyles, sessionGateStyles } from "./dashboard/styles";
 import SessionGate from "./dashboard/components/SessionGate";
@@ -9,48 +9,66 @@ import DevToolsModal from "./dashboard/components/DevToolsModal";
 import { IncidentRow, RecordingCard, StandaloneRecordingRow } from "./dashboard/components/FeedComponents";
 import { MetricBox, SectionLabel, StatusBadge } from "./dashboard/components/SharedComponents";
 
-function ToastLayer({ toasts }) {
+const STATUS_POLL_MS = 2000;
+const INCIDENTS_POLL_MS = 5000;
+const RECORDINGS_POLL_MS = 8000;
+
+const isTabHidden = () => typeof document !== "undefined" && document.visibilityState !== "visible";
+
+function ToastLayer({ toast }) {
+  if (!toast) return null;
   return (
     <div
       style={{
         position: "fixed",
-        bottom: 20,
+        top: 72,
         left: "50%",
         transform: "translateX(-50%)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
         zIndex: 9999,
         alignItems: "center",
         pointerEvents: "none",
         width: "calc(100% - 32px)",
-        maxWidth: 380,
+        maxWidth: 560,
       }}
     >
-      {toasts.map((t) => (
-        <div
-          key={t.id}
-          style={{
-            background: t.type === "alert" ? "#fef2f2" : "#f0fdf4",
-            border: `1px solid ${t.type === "alert" ? "#ef444470" : "#16a34a70"}`,
-            color: t.type === "alert" ? "#ef4444" : "#16a34a",
-            padding: "10px 16px",
-            fontSize: 11,
-            letterSpacing: ".1em",
-            fontFamily: "'Courier New', monospace",
-            borderRadius: 2,
-            animation: "slideUp .3s ease",
-            boxShadow: "0 4px 24px #0f172a00080",
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            width: "100%",
-          }}
-        >
-          <span style={{ fontSize: 14 }}>{t.type === "alert" ? "⚠" : "✓"}</span>
-          {t.msg}
-        </div>
-      ))}
+      <div
+        style={{
+          background: toast.type === "alert" ? "#fef2f2" : "#f0fdf4",
+          border: `1px solid ${toast.type === "alert" ? "#ef4444aa" : "#16a34aaa"}`,
+          color: toast.type === "alert" ? "#ef4444" : "#16a34a",
+          padding: "12px 16px",
+          fontSize: 13,
+          letterSpacing: ".08em",
+          fontFamily: "'Courier New', monospace",
+          borderRadius: 4,
+          animation: "slideUp .25s ease",
+          boxShadow: "0 10px 30px #0f172a30",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          width: "100%",
+          fontWeight: 700,
+        }}
+      >
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 16 }}>{toast.type === "alert" ? "⚠" : "✓"}</span>
+          {toast.msg}
+        </span>
+        {toast.extraCount > 0 && (
+          <span
+            style={{
+              background: toast.type === "alert" ? "#ef4444" : "#16a34a",
+              color: "#ffffff",
+              borderRadius: 999,
+              padding: "2px 10px",
+              fontSize: 12,
+            }}
+          >
+            +{toast.extraCount} more
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -64,18 +82,24 @@ export default function ExamProctorDashboard() {
 
   const [sysStatus, setSysStatus] = useState("CONNECTING");
   const [studentsTracked, setStudentsTracked] = useState(0);
+  const [studentsTrackedLive, setStudentsTrackedLive] = useState(0);
+  const [studentsRegistered, setStudentsRegistered] = useState(0);
+  const [connectedCameras, setConnectedCameras] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [recCountdown, setRecCountdown] = useState(0);
   const [recLabel, setRecLabel] = useState(null);
+  const [recCameraId, setRecCameraId] = useState(null);
 
   const [incidents, setIncidents] = useState([]);
   const [recordings, setRecordings] = useState([]);
   const [liveRec, setLiveRec] = useState(null);
+  const [incidentSort, setIncidentSort] = useState("latest");
 
   const knownIds = useRef(new Set());
   const wasRecording = useRef(false);
 
-  const [toasts, setToasts] = useState([]);
+  const [toast, setToast] = useState(null);
+  const toastHideTimer = useRef(null);
   const [isDevToolsOpen, setIsDevToolsOpen] = useState(false);
   const [devToolsAuthed, setDevToolsAuthed] = useState(false);
   const [devPassword, setDevPassword] = useState("");
@@ -85,11 +109,27 @@ export default function ExamProctorDashboard() {
   const [perfSnapshotsBySession, setPerfSnapshotsBySession] = useState({});
   const [videoLayout, setVideoLayout] = useState("auto");
 
-  const addToast = (msg, type = "alert") => {
-    const id = Date.now();
-    setToasts((t) => [...t, { id, msg, type }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 5000);
-  };
+  const sessionId = session?.session_id || null;
+
+  const addToast = useCallback((msg, type = "alert") => {
+    setToast((prev) => {
+      if (prev && prev.type === type) {
+        return {
+          ...prev,
+          msg,
+          extraCount: (prev.extraCount || 0) + 1,
+          ts: Date.now(),
+        };
+      }
+      return { msg, type, extraCount: 0, ts: Date.now() };
+    });
+
+    if (toastHideTimer.current) clearTimeout(toastHideTimer.current);
+    toastHideTimer.current = setTimeout(() => {
+      setToast(null);
+      toastHideTimer.current = null;
+    }, 8000);
+  }, []);
 
   const capturePerfSnapshot = useCallback(() => {
     const activeSessionId = session?.session_id;
@@ -101,62 +141,15 @@ export default function ExamProctorDashboard() {
     });
   }, [incidents, studentsTracked, sysStatus, session]);
 
-  // ── Web Push registration ────────────────────────────────────────────────────
-  const _swReg = useRef(null);
-
-  useEffect(() => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    navigator.serviceWorker
-      .register("/sw.js")
-      .then((reg) => { _swReg.current = reg; })
-      .catch((e) => console.warn("[SW] Registration failed:", e));
-
-    // When the user taps a "Recording ready" push notification, the SW posts
-    // a NAVIGATE message — refresh recordings and scroll to the section.
-    const onSwMessage = (evt) => {
-      if (evt.data?.type === "NAVIGATE" && evt.data?.tab === "recordings") {
-        const sid = activeSession?.session_id || "";
-        api.recordings(sid).then((r) => setRecordings(r.recordings || [])).catch(() => {});
-        setTimeout(() => {
-          document.getElementById("recordings-section")?.scrollIntoView({ behavior: "smooth" });
-        }, 300);
-      }
-    };
-    navigator.serviceWorker.addEventListener("message", onSwMessage);
-    return () => navigator.serviceWorker.removeEventListener("message", onSwMessage);
-  }, []);
-
-  const _subscribeToPush = async () => {
-    try {
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") return;
-
-      const reg = _swReg.current || (await navigator.serviceWorker.ready);
-      const { key } = await api.vapidPublicKey();
-
-      // Convert base64url VAPID public key → Uint8Array
-      const b64 = (key + "=".repeat((4 - (key.length % 4)) % 4))
-        .replace(/-/g, "+")
-        .replace(/_/g, "/");
-      const raw = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: raw,
-      });
-      await api.pushSubscribe(sub.toJSON());
-    } catch (e) {
-      console.warn("[Push] Subscribe failed:", e);
-    }
-  };
-
-  const handleSessionStart = (sess) => {
+  const handleSessionStart = async (sess) => {
     setSession(sess);
-    requestNotifPermission();
-    _subscribeToPush();
+    setSysStatus("CONNECTING");
+    setIsRecording(false);
+    setRecCountdown(0);
+    setRecLabel(null);
   };
 
-  const handleEndSession = () => {
+  const handleEndSession = async () => {
     setSession(null);
     setIncidents([]);
     setRecordings([]);
@@ -220,7 +213,6 @@ export default function ExamProctorDashboard() {
     addToast("S1 - Hand-Suspiciousrotation (91.3%) [TEST]", "alert");
   };
 
-  const sessionId = session?.session_id || null;
   const perfSnapshots = perfSnapshotsBySession[sessionId] || [];
 
   useEffect(() => {
@@ -231,42 +223,68 @@ export default function ExamProctorDashboard() {
     return () => clearInterval(t);
   }, []);
 
+  useEffect(
+    () => () => {
+      if (toastHideTimer.current) clearTimeout(toastHideTimer.current);
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!session) return;
     const poll = async () => {
+      if (isTabHidden()) return;
       try {
         const s = await api.status();
+        const toCount = (v) => {
+          const n = Number(v);
+          return Number.isFinite(n) ? Math.max(0, n) : 0;
+        };
+        const liveCount = toCount(s.students_tracked_live);
+        const registeredCount = toCount(s.students_registered);
+        const trackedCount = toCount(s.students_tracked);
+        const connectedCount = toCount(s.connected_cameras);
+        setStudentsTrackedLive(liveCount);
+        setStudentsRegistered(registeredCount);
+        setConnectedCameras(connectedCount);
+        setStudentsTracked(Math.max(trackedCount, liveCount, registeredCount, connectedCount));
         if (s.is_recording) {
           setSysStatus("RECORDING");
           setIsRecording(true);
           setRecCountdown(s.recording_remaining);
           setRecLabel(s.recording_label);
+          setRecCameraId(s.recording_camera_id || null);
           if (!wasRecording.current) {
             setAlertFlash(true);
             setTimeout(() => setAlertFlash(false), 600);
+            const recText = s.recording_label ? `Recording started: ${s.recording_label}` : "Recording started";
+            fireNotification("Incident Triggered", recText);
+            addToast(recText, "alert");
           }
         } else {
           setSysStatus("NORMAL");
-          if (wasRecording.current) api.recordings(sessionId).then((r) => setRecordings(r.recordings || [])).catch(() => {});
+          if (wasRecording.current) api.recordings(sessionId).then(setRecordings).catch(() => {});
           setIsRecording(false);
           setRecCountdown(0);
           setRecLabel(null);
+          setRecCameraId(null);
         }
         wasRecording.current = s.is_recording;
-        if (s.students_tracked !== undefined) setStudentsTracked(s.students_tracked);
       } catch {
-        setSysStatus("CONNECTING");
+        setSysStatus("OFFLINE");
         setIsRecording(false);
+        setRecCameraId(null);
       }
     };
     poll();
-    const t = setInterval(poll, 1000);
+    const t = setInterval(poll, STATUS_POLL_MS);
     return () => clearInterval(t);
   }, [session, sessionId]);
 
   useEffect(() => {
     if (!session) return;
     const poll = async () => {
+      if (isTabHidden()) return;
       try {
         const data = await api.incidents(sessionId);
         const newOnes = data.filter((i) => !knownIds.current.has(i.id));
@@ -287,21 +305,22 @@ export default function ExamProctorDashboard() {
       }
     };
     poll();
-    const t = setInterval(poll, 3000);
+    const t = setInterval(poll, INCIDENTS_POLL_MS);
     return () => clearInterval(t);
   }, [session, sessionId]);
 
   useEffect(() => {
     if (!session) return;
     const poll = async () => {
+      if (isTabHidden()) return;
       try {
-        setRecordings((await api.recordings(sessionId)).recordings || []);
+        setRecordings(await api.recordings(sessionId));
       } catch {
         // Ignore transient recording polling failures.
       }
     };
     poll();
-    const t = setInterval(poll, 5000);
+    const t = setInterval(poll, RECORDINGS_POLL_MS);
     return () => clearInterval(t);
   }, [session, sessionId]);
 
@@ -310,6 +329,7 @@ export default function ExamProctorDashboard() {
       setLiveRec({
         id: "live",
         label: recLabel,
+        display_meta: [recCameraId, new Date().toLocaleString("en-US", { hour12: false })].filter(Boolean).join(" · "),
         created_at: new Date().toISOString(),
         status: "RECORDING",
         countdown: recCountdown,
@@ -318,7 +338,7 @@ export default function ExamProctorDashboard() {
     } else {
       setLiveRec(null);
     }
-  }, [isRecording, recLabel, recCountdown]);
+  }, [isRecording, recLabel, recCountdown, recCameraId]);
 
   const markReviewed = useCallback(async (id) => {
     setIncidents((prev) => prev.map((i) => (i.id === id ? { ...i, status: "REVIEWED" } : i)));
@@ -334,19 +354,38 @@ export default function ExamProctorDashboard() {
 
   const allRecordings = liveRec ? [liveRec, ...recordings] : recordings;
   const matchedRecIds = new Set();
+  const availableRecordings = [...allRecordings];
+  const sortedIncidents = [...incidents].sort((a, b) => {
+    if (incidentSort === "confidence") {
+      const confDelta = (b.confidence || 0) - (a.confidence || 0);
+      if (confDelta !== 0) return confDelta;
+    }
+    if (incidentSort === "incident_type") {
+      const typeDelta = String(a.incident_type || "").localeCompare(String(b.incident_type || ""), undefined, { sensitivity: "base" });
+      if (typeDelta !== 0) return typeDelta;
+    }
+    return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+  });
 
-  const incidentsWithRec = incidents.map((inc) => {
-    const linked = findLinkedRecording(inc, allRecordings);
-    if (linked) matchedRecIds.add(linked.id || linked.file_id);
-    const isLive = isRecording && liveRec && inc.id === incidents[incidents.length - 1]?.id;
+  const incidentsWithRec = sortedIncidents.map((inc) => {
+    const linked = findLinkedRecording(inc, availableRecordings);
+    if (linked) {
+      const linkedId = linked.id || linked.file_id;
+      matchedRecIds.add(linkedId);
+      const idx = availableRecordings.findIndex((r) => (r.id || r.file_id) === linkedId);
+      if (idx >= 0) availableRecordings.splice(idx, 1);
+    }
+    const isLive = isRecording && liveRec && inc.id === incidents[0]?.id;
     return { inc, linked, isLive };
   });
 
-  const unmatchedRecs = allRecordings.filter((r) => r.status !== "RECORDING" && !matchedRecIds.has(r.id || r.file_id));
+  const unmatchedRecs = availableRecordings.filter((r) => r.status !== "RECORDING" && !matchedRecIds.has(r.id || r.file_id));
 
   const isAlert = sysStatus === "ALERT" || sysStatus === "RECORDING";
   const unreviewed = incidents.filter((i) => i.status === "UNREVIEWED").length;
-  const tickerText = `SESSION: ${session?.session_name || "-"} · SYSTEM: ${sysStatus} · INCIDENTS: ${incidents.length} · UNREVIEWED: ${unreviewed} · RECORDINGS: ${recordings.length} · STUDENTS: ${studentsTracked} · POLLING: 1s/3s/5s`;
+  const connectedFromList = cameraList.filter((c) => c.status === "CONNECTED").length;
+  const dynamicStudentCount = Math.max(studentsTracked, studentsTrackedLive, studentsRegistered, connectedCameras, connectedFromList);
+  const tickerText = `SESSION: ${session?.session_name || "-"} · SYSTEM: ${sysStatus} · INCIDENTS: ${incidents.length} · UNREVIEWED: ${unreviewed} · RECORDINGS: ${recordings.length} · STUDENTS: ${dynamicStudentCount} · POLLING: 2s/5s/8s`;
 
   if (!session) {
     return (
@@ -360,7 +399,7 @@ export default function ExamProctorDashboard() {
   return (
     <>
       <style>{`${sessionGateStyles}${dashboardStyles}`}</style>
-      <ToastLayer toasts={toasts} />
+      <ToastLayer toast={toast} />
 
       <DevToolsModal
         open={isDevToolsOpen}
@@ -374,6 +413,7 @@ export default function ExamProctorDashboard() {
         addCamLoading={devAddCamLoading}
         addCamMessage={devAddCamMessage}
         onSendTestNotif={handleDevTestNotification}
+        sessionId={sessionId}
         perfSnapshots={perfSnapshots}
         videoLayout={videoLayout}
         onVideoLayoutChange={setVideoLayout}
@@ -421,7 +461,7 @@ export default function ExamProctorDashboard() {
               />
               INCIDENT DETECTED · {recLabel || "RECORDING IN PROGRESS"}
             </div>
-            <span style={{ fontSize: 10, color: "#ef4444", fontWeight: 700, letterSpacing: ".1em" }}>+{recCountdown}s remaining</span>
+            <span style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, letterSpacing: ".06em" }}>+{recCountdown}s remaining</span>
           </div>
         )}
 
@@ -436,7 +476,7 @@ export default function ExamProctorDashboard() {
             <div className="video-section">
               <SectionLabel>
                 LIVE FEEDS · CAMERAS: {cameraList.length}
-                <span className="poll-dot" title="Polling /status every 1s" />
+                <span className="poll-dot" title="Polling /status every 2s (pauses when tab is hidden)" />
               </SectionLabel>
               <VideoWall
                 cameras={cameraList}
@@ -464,7 +504,7 @@ export default function ExamProctorDashboard() {
                     accent={unreviewed > 0 ? "#ef4444" : "#16a34a"}
                   />
                   <MetricBox label="RECORDINGS" value={recordings.length} sub="this session" accent="#0891b2" />
-                  <MetricBox label="STUDENTS" value={studentsTracked} sub="tracked now" accent="#16a34a" />
+                  <MetricBox label="STUDENTS" value={dynamicStudentCount} sub="dynamic live count" accent="#16a34a" />
                 </div>
               </div>
             </div>
@@ -488,9 +528,9 @@ export default function ExamProctorDashboard() {
                 <div style={{ marginBottom: 8 }}>
                   <div
                     style={{
-                      fontSize: 7,
+                      fontSize: 10,
                       color: "#ef4444",
-                      letterSpacing: ".14em",
+                      letterSpacing: ".08em",
                       marginBottom: 4,
                       animation: "blink .7s step-end infinite",
                     }}
@@ -513,8 +553,38 @@ export default function ExamProctorDashboard() {
                 <>
                   {incidentsWithRec.length > 0 && (
                     <>
-                      <div style={{ fontSize: 7, letterSpacing: ".18em", color: "#4ade80", marginBottom: 6 }}>
-                        INCIDENT LOG - click to expand clip
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          marginBottom: 6,
+                        }}
+                      >
+                        <div style={{ fontSize: 10, letterSpacing: ".08em", color: "#4ade80" }}>
+                          INCIDENT LOG - click to expand clip
+                        </div>
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 9, color: "#16a34a", letterSpacing: ".08em" }}>
+                          SORT
+                          <select
+                            value={incidentSort}
+                            onChange={(e) => setIncidentSort(e.target.value)}
+                            style={{
+                              background: "#f0fdf4",
+                              border: "1px solid #bbf7d0",
+                              color: "#166534",
+                              fontSize: 10,
+                              letterSpacing: ".04em",
+                              padding: "4px 6px",
+                              borderRadius: 2,
+                            }}
+                          >
+                            <option value="latest">Latest</option>
+                            <option value="confidence">Confidence Level</option>
+                            <option value="incident_type">Incident Type</option>
+                          </select>
+                        </label>
                       </div>
                       {incidentsWithRec.map(({ inc, linked, isLive }) => (
                         <IncidentRow
@@ -530,7 +600,7 @@ export default function ExamProctorDashboard() {
 
                   {unmatchedRecs.length > 0 && (
                     <>
-                      <div id="recordings-section" style={{ fontSize: 7, letterSpacing: ".18em", color: "#4ade80", margin: "12px 0 6px" }}>
+                      <div style={{ fontSize: 10, letterSpacing: ".08em", color: "#4ade80", margin: "12px 0 6px" }}>
                         OTHER RECORDINGS
                       </div>
                       {unmatchedRecs.map((rec) => (
@@ -548,11 +618,11 @@ export default function ExamProctorDashboard() {
               <div className="tech-stack">
                 YOLO · OPENCV · FFMPEG H.264
                 <br />
-                APPWRITE DB · OBJECT STORAGE
+                APPWRITE DB · LOCAL RECORDINGS
                 <br />
                 RTSP · SESSION SCOPE
                 <br />
-                POLLING: 1s / 3s / 5s / 10s
+                POLLING: 2s / 5s / 8s (paused on hidden tab)
               </div>
             </div>
           </div>
