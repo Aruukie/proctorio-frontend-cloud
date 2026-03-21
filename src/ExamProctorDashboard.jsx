@@ -263,7 +263,7 @@ export default function ExamProctorDashboard() {
           }
         } else {
           setSysStatus("NORMAL");
-          if (wasRecording.current) api.recordings(sessionId).then(setRecordings).catch(() => {});
+          if (wasRecording.current) api.recordings(sessionId).then((r) => setRecordings(r.recordings || [])).catch(() => {});
           setIsRecording(false);
           setRecCountdown(0);
           setRecLabel(null);
@@ -314,7 +314,7 @@ export default function ExamProctorDashboard() {
     const poll = async () => {
       if (isTabHidden()) return;
       try {
-        setRecordings(await api.recordings(sessionId));
+        setRecordings((await api.recordings(sessionId)).recordings || []);
       } catch {
         // Ignore transient recording polling failures.
       }
