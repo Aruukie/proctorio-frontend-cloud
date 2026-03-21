@@ -110,6 +110,20 @@ export default function ExamProctorDashboard() {
       .register("/sw.js")
       .then((reg) => { _swReg.current = reg; })
       .catch((e) => console.warn("[SW] Registration failed:", e));
+
+    // When the user taps a "Recording ready" push notification, the SW posts
+    // a NAVIGATE message — refresh recordings and scroll to the section.
+    const onSwMessage = (evt) => {
+      if (evt.data?.type === "NAVIGATE" && evt.data?.tab === "recordings") {
+        const sid = activeSession?.session_id || "";
+        api.recordings(sid).then((r) => setRecordings(r.recordings || [])).catch(() => {});
+        setTimeout(() => {
+          document.getElementById("recordings-section")?.scrollIntoView({ behavior: "smooth" });
+        }, 300);
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", onSwMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onSwMessage);
   }, []);
 
   const _subscribeToPush = async () => {
@@ -516,7 +530,7 @@ export default function ExamProctorDashboard() {
 
                   {unmatchedRecs.length > 0 && (
                     <>
-                      <div style={{ fontSize: 7, letterSpacing: ".18em", color: "#4ade80", margin: "12px 0 6px" }}>
+                      <div id="recordings-section" style={{ fontSize: 7, letterSpacing: ".18em", color: "#4ade80", margin: "12px 0 6px" }}>
                         OTHER RECORDINGS
                       </div>
                       {unmatchedRecs.map((rec) => (
