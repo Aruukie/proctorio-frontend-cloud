@@ -151,7 +151,13 @@ export default function ExamProctorDashboard() {
     setRecLabel(null);
   };
 
-  const handleEndSession = () => {
+  const handleEndSession = async () => {
+    // Stop all recordings first so the files are ready for review in the summary
+    try {
+      await api.endSession();
+    } catch {
+      // Continue even if backend is unreachable — still show the summary
+    }
     setShowSummary(true);
   };
 

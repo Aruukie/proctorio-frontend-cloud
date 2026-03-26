@@ -75,6 +75,7 @@ const api = {
       body: JSON.stringify(d),
     }),
   addLocalCamera: () => fetchJson(`${BACKEND}/cameras/add_local`, { method: "POST" }),
+  endSession: () => fetchJson(`${BACKEND}/session/end`, { method: "POST" }),
 };
 
 let notifPermission = "default";
