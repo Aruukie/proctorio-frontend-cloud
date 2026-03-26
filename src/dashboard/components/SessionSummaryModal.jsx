@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fmtDateTime } from "../utils";
-import { resolveUrl } from "../api";
+import { api, resolveUrl } from "../api";
 
 const fmtSec = (s) => {
   if (s == null || s < 0 || !Number.isFinite(s)) return "0:00";
@@ -10,25 +10,27 @@ const fmtSec = (s) => {
 };
 
 // ─── Video player + timeline with incident markers ────────────────────────────
-function VideoTimeline({ recordings, incidents, seekTick }) {
+function VideoTimeline({ recording, incidents, seekTick }) {
   const videoRef = useRef(null);
   const timelineRef = useRef(null);
-  const [selRec, setSelRec] = useState(null);
   const [duration, setDuration] = useState(0);
   const [curTime, setCurTime] = useState(0);
   const [videoErr, setVideoErr] = useState(false);
   const [hoverTime, setHoverTime] = useState(null);
 
-  useEffect(() => {
-    if (recordings.length && !selRec) setSelRec(recordings[0]);
-  }, [recordings, selRec]);
-
-  // External seek trigger from student incident rows
+  // External seek trigger
   useEffect(() => {
     if (!seekTick || !videoRef.current) return;
     videoRef.current.currentTime = seekTick.time;
     videoRef.current.play().catch(() => {});
   }, [seekTick]);
+
+  // Reset error state when recording changes
+  useEffect(() => {
+    setVideoErr(false);
+    setDuration(0);
+    setCurTime(0);
+  }, [recording?.url]);
 
   const handleTimelineClick = useCallback(
     (e) => {
@@ -50,7 +52,6 @@ function VideoTimeline({ recordings, incidents, seekTick }) {
     [duration],
   );
 
-  // Build markers from all incidents (only those with a real offset)
   const markers = incidents
     .map((inc) => ({
       id: inc.id,
@@ -58,9 +59,9 @@ function VideoTimeline({ recordings, incidents, seekTick }) {
       student: inc.student_id || "?",
       type: inc.incident_type || "",
     }))
-    .filter((m) => m.t > 0 || incidents.length > 0);
+    .filter((m) => m.t >= 0);
 
-  if (!selRec) {
+  if (!recording) {
     return (
       <div
         style={{
@@ -74,57 +75,24 @@ function VideoTimeline({ recordings, incidents, seekTick }) {
           borderRadius: 4,
         }}
       >
-        NO SESSION RECORDING AVAILABLE
-        <div style={{ fontSize: 9, color: "#bbf7d0", marginTop: 4 }}>
-          Recordings will appear here after a session with cameras
-        </div>
+        NO RECORDING AVAILABLE FOR THIS CAMERA
       </div>
     );
   }
 
   return (
     <div>
-      {/* Camera switcher */}
-      {recordings.length > 1 && (
-        <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
-          {recordings.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => {
-                setSelRec(r);
-                setVideoErr(false);
-                setDuration(0);
-                setCurTime(0);
-              }}
-              style={{
-                background: selRec?.id === r.id ? "#dcfce7" : "transparent",
-                border: "1px solid #bbf7d0",
-                color: "#15803d",
-                fontSize: 9,
-                letterSpacing: ".08em",
-                padding: "3px 10px",
-                cursor: "pointer",
-                borderRadius: 3,
-                fontFamily: "inherit",
-              }}
-            >
-              {r.camera_id || r.camera || r.name}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Video element */}
       <div style={{ background: "#000", borderRadius: 4, overflow: "hidden" }}>
         {!videoErr ? (
           <video
             ref={videoRef}
-            src={resolveUrl(selRec.url)}
+            src={resolveUrl(recording.url)}
             onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
             onTimeUpdate={() => setCurTime(videoRef.current?.currentTime || 0)}
             onError={() => setVideoErr(true)}
             controls
-            style={{ width: "100%", display: "block", maxHeight: 320 }}
+            style={{ width: "100%", display: "block", maxHeight: 300 }}
           />
         ) : (
           <div
@@ -138,14 +106,30 @@ function VideoTimeline({ recordings, incidents, seekTick }) {
             }}
           >
             <div style={{ fontSize: 9, color: "#4ade80", letterSpacing: ".1em" }}>
-              CODEC NOT SUPPORTED IN BROWSER
+              VIDEO UNAVAILABLE
             </div>
             <div style={{ fontSize: 8, color: "#bbf7d0" }}>
-              Ensure ffmpeg is installed on the server for H.264 encoding
+              ffmpeg is not installed on the server. Install ffmpeg and restart the backend to enable in-browser playback.
             </div>
+            <button
+              onClick={() => setVideoErr(false)}
+              style={{
+                background: "transparent",
+                border: "1px solid #bbf7d0",
+                color: "#16a34a",
+                fontSize: 9,
+                letterSpacing: ".08em",
+                padding: "3px 10px",
+                cursor: "pointer",
+                borderRadius: 3,
+                fontFamily: "inherit",
+              }}
+            >
+              ↺ RETRY
+            </button>
             <a
-              href={resolveUrl(selRec.url)}
-              download={selRec.name}
+              href={resolveUrl(recording.url)}
+              download={recording.name}
               style={{
                 color: "#16a34a",
                 fontSize: 9,
@@ -195,7 +179,7 @@ function VideoTimeline({ recordings, incidents, seekTick }) {
               }}
             />
 
-            {/* Hover preview */}
+            {/* Hover line */}
             {hoverTime != null && (
               <div
                 style={{
@@ -270,7 +254,7 @@ function VideoTimeline({ recordings, incidents, seekTick }) {
             )}
           </div>
 
-          {/* Time labels row */}
+          {/* Time labels */}
           <div
             style={{
               display: "flex",
@@ -480,24 +464,11 @@ function StudentRow({ studentId, incidents, onSeek }) {
   );
 }
 
-// ─── Main modal ───────────────────────────────────────────────────────────────
-export default function SessionSummaryModal({
-  session,
-  incidents,
-  recordings = [],
-  onConfirmEnd,
-  onCancel,
-}) {
+// ─── Single camera section (recording + timeline + student table) ─────────────
+function CameraSection({ cameraId, recording, incidents }) {
   const [seekTick, setSeekTick] = useState(null);
+  const handleSeek = (t) => setSeekTick({ time: t, id: Date.now() });
 
-  if (!session) return null;
-
-  // Filter recordings to this session
-  const sessionRecordings = recordings.filter(
-    (r) => !r.session_id || r.session_id === session.session_id,
-  );
-
-  // Group incidents by student
   const studentMap = {};
   for (const inc of incidents) {
     const sid = inc.student_id || "UNKNOWN";
@@ -506,11 +477,326 @@ export default function SessionSummaryModal({
   }
   const students = Object.entries(studentMap).sort((a, b) => b[1].length - a[1].length);
 
+  return (
+    <div
+      style={{
+        border: "1px solid #bbf7d0",
+        borderRadius: 8,
+        overflow: "hidden",
+        marginBottom: 16,
+        background: "#f7fff9",
+      }}
+    >
+      {/* Camera header */}
+      <div
+        style={{
+          padding: "10px 16px",
+          background: "#dcfce7",
+          borderBottom: "1px solid #bbf7d0",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2">
+          <path d="M23 7l-7 5 7 5V7z" />
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+        </svg>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: ".12em",
+            color: "#14532d",
+          }}
+        >
+          CAMERA: {cameraId}
+        </span>
+        <span
+          style={{
+            marginLeft: "auto",
+            fontSize: 9,
+            color: "#15803d",
+            letterSpacing: ".08em",
+            background: "#f0fdf4",
+            border: "1px solid #86efac",
+            borderRadius: 999,
+            padding: "2px 8px",
+          }}
+        >
+          {incidents.length} incident{incidents.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      <div style={{ padding: "14px 16px" }}>
+        {/* Recording info bar */}
+        <div
+          style={{
+            fontSize: 9,
+            color: "#4ade80",
+            letterSpacing: ".1em",
+            marginBottom: 10,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <span>▸ SESSION RECORDING</span>
+          <span style={{ color: "#bbf7d0" }}>·</span>
+          <span style={{ color: "#ef4444" }}>█</span>
+          <span style={{ color: "#bbf7d0" }}>RED MARKERS = INCIDENTS</span>
+          <span style={{ color: "#bbf7d0" }}>·</span>
+          <span>CLICK TIMELINE OR ▶ TO SEEK</span>
+        </div>
+
+        <VideoTimeline recording={recording} incidents={incidents} seekTick={seekTick} />
+
+        {/* Student table */}
+        {students.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <div
+              style={{
+                fontSize: 9,
+                color: "#4ade80",
+                letterSpacing: ".1em",
+                marginBottom: 8,
+              }}
+            >
+              FLAGGED STUDENTS — CLICK TO EXPAND · ▶ JUMPS TO TIMESTAMP
+            </div>
+            {students.map(([sid, sincs]) => (
+              <StudentRow key={sid} studentId={sid} incidents={sincs} onSeek={handleSeek} />
+            ))}
+          </div>
+        )}
+
+        {students.length === 0 && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: "12px 0",
+              textAlign: "center",
+              fontSize: 10,
+              color: "#4ade80",
+              letterSpacing: ".1em",
+            }}
+          >
+            NO INCIDENTS FOR THIS CAMERA
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Loading screen ────────────────────────────────────────────────────────────
+function LoadingScreen({ sessionId, initialRecordings, onReady }) {
+  const [recs, setRecs] = useState(initialRecordings || []);
+  const [elapsed, setElapsed] = useState(0);
+  const TIMEOUT_S = 120;
+
+  const allReady = (list) =>
+    list.length > 0 && list.every((r) => r.browser_ready);
+
+  useEffect(() => {
+    if (allReady(recs)) {
+      onReady(recs);
+      return;
+    }
+
+    let stopped = false;
+    const startTime = Date.now();
+
+    const tick = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+
+    const poll = async () => {
+      if (stopped) return;
+      const age = (Date.now() - startTime) / 1000;
+      if (age >= TIMEOUT_S) {
+        clearInterval(tick);
+        onReady(recs); // proceed anyway after timeout
+        return;
+      }
+      try {
+        const data = await api.recordings(sessionId);
+        const list = (data.recordings || []).filter(
+          (r) => !r.session_id || r.session_id === sessionId,
+        );
+        setRecs(list);
+        if (allReady(list)) {
+          clearInterval(tick);
+          onReady(list);
+          return;
+        }
+      } catch {
+        // ignore, keep polling
+      }
+      if (!stopped) setTimeout(poll, 2000);
+    };
+
+    // Short initial delay so the backend has time to finalize files
+    const initTimer = setTimeout(poll, 1500);
+
+    return () => {
+      stopped = true;
+      clearTimeout(initTimer);
+      clearInterval(tick);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const readyCount = recs.filter((r) => r.browser_ready).length;
+  const totalCount = recs.length;
+  const pct = totalCount > 0 ? Math.round((readyCount / totalCount) * 100) : 0;
+
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 20,
+        padding: 40,
+      }}
+    >
+      {/* Spinner */}
+      <div
+        style={{
+          width: 48,
+          height: 48,
+          border: "3px solid #bbf7d0",
+          borderTopColor: "#16a34a",
+          borderRadius: "50%",
+          animation: "spin 0.9s linear infinite",
+        }}
+      />
+
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: ".14em",
+          color: "#15803d",
+        }}
+      >
+        PROCESSING RECORDINGS
+      </div>
+
+      {/* Progress bar */}
+      {totalCount > 0 && (
+        <div style={{ width: "100%", maxWidth: 320 }}>
+          <div
+            style={{
+              height: 6,
+              background: "#dcfce7",
+              border: "1px solid #bbf7d0",
+              borderRadius: 999,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                width: `${pct}%`,
+                background: "#16a34a",
+                borderRadius: 999,
+                transition: "width 0.4s ease",
+              }}
+            />
+          </div>
+          <div
+            style={{
+              marginTop: 6,
+              fontSize: 9,
+              color: "#4ade80",
+              letterSpacing: ".08em",
+              textAlign: "center",
+            }}
+          >
+            {readyCount} / {totalCount} CAMERAS READY · {elapsed}s elapsed
+          </div>
+        </div>
+      )}
+
+      {totalCount === 0 && (
+        <div style={{ fontSize: 9, color: "#4ade80", letterSpacing: ".08em" }}>
+          WAITING FOR RECORDINGS · {elapsed}s elapsed
+        </div>
+      )}
+
+      <div style={{ fontSize: 9, color: "#86efac", letterSpacing: ".06em", textAlign: "center", maxWidth: 280 }}>
+        Converting session recordings to browser-compatible format.
+        <br />
+        This may take a moment depending on session length.
+      </div>
+
+      {elapsed >= 10 && readyCount === 0 && (
+        <button
+          onClick={() => onReady(recs)}
+          style={{
+            background: "transparent",
+            border: "1px solid #bbf7d0",
+            color: "#16a34a",
+            fontSize: 10,
+            letterSpacing: ".08em",
+            padding: "6px 16px",
+            cursor: "pointer",
+            borderRadius: 4,
+            fontFamily: "inherit",
+          }}
+        >
+          SKIP WAIT → VIEW REPORT
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Main modal ───────────────────────────────────────────────────────────────
+export default function SessionSummaryModal({
+  session,
+  incidents,
+  recordings = [],
+  onConfirmEnd,
+  onCancel,
+}) {
+  const [readyRecordings, setReadyRecordings] = useState(null); // null = still loading
+
+  // Reset loading state whenever the modal opens for a new session
+  useEffect(() => {
+    if (session) setReadyRecordings(null);
+  }, [session?.session_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!session) return null;
+
+  // Filter recordings to this session
+  const sessionRecordings = recordings.filter(
+    (r) => !r.session_id || r.session_id === session.session_id,
+  );
+
   const totalIncidents = incidents.length;
   const unreviewedTotal = incidents.filter((i) => i.status === "UNREVIEWED").length;
-  const flaggedStudents = students.length;
 
-  const handleSeek = (t) => setSeekTick({ time: t, id: Date.now() });
+  // Collect all unique camera IDs from recordings and incidents
+  const cameraIds = [];
+  const seen = new Set();
+  for (const r of readyRecordings || sessionRecordings) {
+    const cid = r.camera_id || r.camera || r.name || "CAM";
+    if (!seen.has(cid)) { seen.add(cid); cameraIds.push(cid); }
+  }
+  for (const inc of incidents) {
+    const cid = inc.camera_id;
+    if (cid && !seen.has(cid)) { seen.add(cid); cameraIds.push(cid); }
+  }
+  // Fallback: if no cameras but there are incidents, put them in an "ALL" bucket
+  if (cameraIds.length === 0 && incidents.length > 0) cameraIds.push("ALL");
+
+  const flaggedStudents = new Set(incidents.map((i) => i.student_id || "UNKNOWN")).size;
+
+  const finalRecordings = readyRecordings || sessionRecordings;
 
   return (
     <div
@@ -528,6 +814,7 @@ export default function SessionSummaryModal({
         overflow: "auto",
       }}
     >
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <div
         style={{
           background: "#f7fff9",
@@ -576,22 +863,24 @@ export default function SessionSummaryModal({
               SESSION:&nbsp;<strong>{session.session_name}</strong>
             </div>
           </div>
-          <button
-            onClick={onCancel}
-            style={{
-              background: "transparent",
-              border: "1px solid #bbf7d0",
-              color: "#16a34a",
-              fontSize: 10,
-              letterSpacing: ".1em",
-              padding: "6px 12px",
-              cursor: "pointer",
-              borderRadius: 4,
-              fontFamily: "inherit",
-            }}
-          >
-            ← BACK TO SESSION
-          </button>
+          {readyRecordings !== null && (
+            <button
+              onClick={onCancel}
+              style={{
+                background: "transparent",
+                border: "1px solid #bbf7d0",
+                color: "#16a34a",
+                fontSize: 10,
+                letterSpacing: ".1em",
+                padding: "6px 12px",
+                cursor: "pointer",
+                borderRadius: 4,
+                fontFamily: "inherit",
+              }}
+            >
+              ← BACK TO SESSION
+            </button>
+          )}
         </div>
 
         {/* ── Stats row ── */}
@@ -632,136 +921,113 @@ export default function SessionSummaryModal({
           ))}
         </div>
 
-        {/* ── Scrollable body ── */}
+        {/* ── Body ── */}
         <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
-          {/* Video section */}
-          <div
-            style={{
-              padding: "14px 18px",
-              borderBottom: "1px solid #bbf7d0",
-              flexShrink: 0,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 9,
-                color: "#4ade80",
-                letterSpacing: ".1em",
-                marginBottom: 10,
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
-              <span>▸ SESSION RECORDING</span>
-              <span style={{ color: "#bbf7d0" }}>·</span>
-              <span style={{ color: "#ef4444" }}>█</span>
-              <span style={{ color: "#bbf7d0" }}>RED MARKERS = INCIDENTS</span>
-              <span style={{ color: "#bbf7d0" }}>·</span>
-              <span>CLICK TIMELINE OR ▶ BUTTON TO SEEK</span>
-            </div>
-            <VideoTimeline
-              recordings={sessionRecordings}
-              incidents={incidents}
-              seekTick={seekTick}
+          {readyRecordings === null ? (
+            <LoadingScreen
+              sessionId={session.session_id}
+              initialRecordings={sessionRecordings}
+              onReady={(recs) => setReadyRecordings(recs)}
             />
-          </div>
-
-          {/* Student incident table */}
-          <div style={{ flex: 1, padding: "14px 18px" }}>
-            {students.length === 0 ? (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 10,
-                  padding: "30px 0",
-                  color: "#4ade80",
-                  fontSize: 11,
-                  letterSpacing: ".1em",
-                }}
-              >
-                <svg
-                  width="22"
-                  height="22"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                >
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                  <polyline points="22 4 12 14.01 9 11.01" />
-                </svg>
-                NO INCIDENTS RECORDED THIS SESSION
-              </div>
-            ) : (
-              <>
+          ) : (
+            <div style={{ flex: 1, padding: "14px 18px" }}>
+              {cameraIds.length === 0 ? (
                 <div
                   style={{
-                    fontSize: 9,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 10,
+                    padding: "30px 0",
                     color: "#4ade80",
+                    fontSize: 11,
                     letterSpacing: ".1em",
-                    marginBottom: 10,
                   }}
                 >
-                  FLAGGED STUDENTS — CLICK TO EXPAND INCIDENTS · ▶ JUMPS TO TIMESTAMP IN RECORDING
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
+                  NO INCIDENTS OR RECORDINGS THIS SESSION
                 </div>
-                {students.map(([sid, sincs]) => (
-                  <StudentRow key={sid} studentId={sid} incidents={sincs} onSeek={handleSeek} />
-                ))}
-              </>
-            )}
-          </div>
+              ) : (
+                cameraIds.map((cid) => {
+                  const camRec = finalRecordings.find(
+                    (r) => (r.camera_id || r.camera || r.name || "CAM") === cid,
+                  );
+                  const camIncs = cid === "ALL"
+                    ? incidents
+                    : incidents.filter((i) => (i.camera_id || "ALL") === cid || (!i.camera_id && cid === cameraIds[0]));
+                  return (
+                    <CameraSection
+                      key={cid}
+                      cameraId={cid}
+                      recording={camRec || null}
+                      incidents={camIncs}
+                    />
+                  );
+                })
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Footer ── */}
-        <div
-          style={{
-            padding: "14px 18px",
-            borderTop: "1px solid #bbf7d0",
-            display: "flex",
-            gap: 10,
-            justifyContent: "flex-end",
-            flexShrink: 0,
-          }}
-        >
-          <button
-            onClick={onCancel}
+        {readyRecordings !== null && (
+          <div
             style={{
-              background: "transparent",
-              border: "1px solid #bbf7d0",
-              color: "#16a34a",
-              fontSize: 11,
-              letterSpacing: ".08em",
-              padding: "8px 18px",
-              cursor: "pointer",
-              borderRadius: 4,
-              fontFamily: "inherit",
+              padding: "14px 18px",
+              borderTop: "1px solid #bbf7d0",
+              display: "flex",
+              gap: 10,
+              justifyContent: "flex-end",
+              flexShrink: 0,
             }}
           >
-            CANCEL
-          </button>
-          <button
-            onClick={onConfirmEnd}
-            style={{
-              background: "linear-gradient(135deg, #ef4444, #dc2626)",
-              border: "none",
-              color: "#fff",
-              fontSize: 11,
-              letterSpacing: ".1em",
-              fontWeight: 700,
-              padding: "8px 20px",
-              cursor: "pointer",
-              borderRadius: 4,
-              fontFamily: "inherit",
-              boxShadow: "0 4px 12px #ef444440",
-            }}
-          >
-            ✕ CONFIRM END SESSION
-          </button>
-        </div>
+            <button
+              onClick={onCancel}
+              style={{
+                background: "transparent",
+                border: "1px solid #bbf7d0",
+                color: "#16a34a",
+                fontSize: 11,
+                letterSpacing: ".08em",
+                padding: "8px 18px",
+                cursor: "pointer",
+                borderRadius: 4,
+                fontFamily: "inherit",
+              }}
+            >
+              CANCEL
+            </button>
+            <button
+              onClick={onConfirmEnd}
+              style={{
+                background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                border: "none",
+                color: "#fff",
+                fontSize: 11,
+                letterSpacing: ".1em",
+                fontWeight: 700,
+                padding: "8px 20px",
+                cursor: "pointer",
+                borderRadius: 4,
+                fontFamily: "inherit",
+                boxShadow: "0 4px 12px #ef444440",
+              }}
+            >
+              ✕ CONFIRM END SESSION
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

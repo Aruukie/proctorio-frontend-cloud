@@ -102,6 +102,7 @@ export default function ExamProctorDashboard() {
   const [toast, setToast] = useState(null);
   const toastHideTimer = useRef(null);
   const [showSummary, setShowSummary] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(false);
   const [isDevToolsOpen, setIsDevToolsOpen] = useState(false);
   const [devToolsAuthed, setDevToolsAuthed] = useState(false);
   const [devPassword, setDevPassword] = useState("");
@@ -152,7 +153,9 @@ export default function ExamProctorDashboard() {
   };
 
   const handleEndSession = async () => {
-    // Stop all recordings first so the files are ready for review in the summary
+    // Stop all polling and notifications immediately
+    setSessionEnded(true);
+    // Stop all recordings so files are ready for review
     try {
       await api.endSession();
     } catch {
@@ -163,6 +166,7 @@ export default function ExamProctorDashboard() {
 
   const handleConfirmEndSession = () => {
     setShowSummary(false);
+    setSessionEnded(false);
     setSession(null);
     setIncidents([]);
     setRecordings([]);
@@ -244,7 +248,7 @@ export default function ExamProctorDashboard() {
   );
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || sessionEnded) return;
     const poll = async () => {
       if (isTabHidden()) return;
       try {
@@ -292,10 +296,10 @@ export default function ExamProctorDashboard() {
     poll();
     const t = setInterval(poll, STATUS_POLL_MS);
     return () => clearInterval(t);
-  }, [session, sessionId]);
+  }, [session, sessionId, sessionEnded]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || sessionEnded) return;
     const poll = async () => {
       if (isTabHidden()) return;
       try {
@@ -320,10 +324,10 @@ export default function ExamProctorDashboard() {
     poll();
     const t = setInterval(poll, INCIDENTS_POLL_MS);
     return () => clearInterval(t);
-  }, [session, sessionId]);
+  }, [session, sessionId, sessionEnded]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || sessionEnded) return;
     const poll = async () => {
       if (isTabHidden()) return;
       try {
@@ -335,7 +339,7 @@ export default function ExamProctorDashboard() {
     poll();
     const t = setInterval(poll, RECORDINGS_POLL_MS);
     return () => clearInterval(t);
-  }, [session, sessionId]);
+  }, [session, sessionId, sessionEnded]);
 
   useEffect(() => {
     if (isRecording && recLabel) {
