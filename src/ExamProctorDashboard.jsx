@@ -8,6 +8,7 @@ import CameraPanel from "./dashboard/components/CameraPanel";
 import DevToolsModal from "./dashboard/components/DevToolsModal";
 import { IncidentRow, RecordingCard, StandaloneRecordingRow } from "./dashboard/components/FeedComponents";
 import { MetricBox, SectionLabel, StatusBadge } from "./dashboard/components/SharedComponents";
+import SessionSummaryModal from "./dashboard/components/SessionSummaryModal";
 
 const STATUS_POLL_MS = 2000;
 const INCIDENTS_POLL_MS = 5000;
@@ -100,6 +101,7 @@ export default function ExamProctorDashboard() {
 
   const [toast, setToast] = useState(null);
   const toastHideTimer = useRef(null);
+  const [showSummary, setShowSummary] = useState(false);
   const [isDevToolsOpen, setIsDevToolsOpen] = useState(false);
   const [devToolsAuthed, setDevToolsAuthed] = useState(false);
   const [devPassword, setDevPassword] = useState("");
@@ -149,7 +151,12 @@ export default function ExamProctorDashboard() {
     setRecLabel(null);
   };
 
-  const handleEndSession = async () => {
+  const handleEndSession = () => {
+    setShowSummary(true);
+  };
+
+  const handleConfirmEndSession = () => {
+    setShowSummary(false);
     setSession(null);
     setIncidents([]);
     setRecordings([]);
@@ -400,6 +407,14 @@ export default function ExamProctorDashboard() {
     <>
       <style>{`${sessionGateStyles}${dashboardStyles}`}</style>
       <ToastLayer toast={toast} />
+
+      <SessionSummaryModal
+        session={showSummary ? session : null}
+        incidents={incidents}
+        recordings={recordings}
+        onConfirmEnd={handleConfirmEndSession}
+        onCancel={() => setShowSummary(false)}
+      />
 
       <DevToolsModal
         open={isDevToolsOpen}
