@@ -74,6 +74,7 @@ const api = {
       body: JSON.stringify(d),
     }),
   addLocalCamera: () => fetchJson(`${BACKEND}/cameras/add_local`, { method: "POST" }),
+  startSession: () => fetchJson(`${BACKEND}/session/start`, { method: "POST" }),
   endSession: () => fetchJson(`${BACKEND}/session/end`, { method: "POST" }),
 };
 

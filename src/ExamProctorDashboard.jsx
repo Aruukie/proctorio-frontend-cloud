@@ -103,6 +103,7 @@ export default function ExamProctorDashboard() {
   const toastHideTimer = useRef(null);
   const [showSummary, setShowSummary] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
   const [isDevToolsOpen, setIsDevToolsOpen] = useState(false);
   const [devToolsAuthed, setDevToolsAuthed] = useState(false);
   const [devPassword, setDevPassword] = useState("");
@@ -150,6 +151,28 @@ export default function ExamProctorDashboard() {
     setIsRecording(false);
     setRecCountdown(0);
     setRecLabel(null);
+  };
+
+  const handleStartSession = async () => {
+    setIsStarting(true);
+    try {
+      const res = await api.startSession();
+      if (res.ok) {
+        const cams = res.started_recording?.length || 0;
+        addToast(
+          cams > 0
+            ? `Recording + detection started on ${cams} camera${cams !== 1 ? "s" : ""}`
+            : "Detection started (recording already active or no cameras)",
+          "ok",
+        );
+      } else {
+        addToast("Could not start recording", "alert");
+      }
+    } catch {
+      addToast("Backend unreachable", "alert");
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   const handleEndSession = async () => {
@@ -450,6 +473,29 @@ export default function ExamProctorDashboard() {
             </div>
             <button className="devtools-btn" onClick={openDevTools} title="Open developer tools">
               DEV TOOLS
+            </button>
+            <button
+              onClick={handleStartSession}
+              disabled={isStarting || isRecording}
+              title={isRecording ? "Recording already active" : "Start recording and detection on all cameras"}
+              style={{
+                background: isRecording
+                  ? "transparent"
+                  : "linear-gradient(135deg, #16a34a, #15803d)",
+                border: isRecording ? "1px solid #4ade80" : "none",
+                color: isRecording ? "#4ade80" : "#fff",
+                fontSize: 10,
+                letterSpacing: ".1em",
+                fontWeight: 700,
+                padding: "6px 14px",
+                cursor: isRecording || isStarting ? "default" : "pointer",
+                borderRadius: 4,
+                fontFamily: "inherit",
+                opacity: isStarting ? 0.6 : 1,
+                transition: "opacity 0.2s",
+              }}
+            >
+              {isRecording ? "● RECORDING" : isStarting ? "STARTING…" : "▶ START"}
             </button>
             <button className="session-end-btn" onClick={handleEndSession} title="End session and return to session gate">
               ✕ END SESSION
