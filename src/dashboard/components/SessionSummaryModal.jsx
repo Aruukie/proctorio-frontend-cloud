@@ -280,7 +280,6 @@ function VideoTimeline({ recording, incidents, seekTick }) {
 // ─── Per-student expandable row ───────────────────────────────────────────────
 function StudentRow({ studentId, incidents, onSeek }) {
   const [open, setOpen] = useState(false);
-  const unreviewedCount = incidents.filter((i) => i.status === "UNREVIEWED").length;
 
   return (
     <div
@@ -310,19 +309,12 @@ function StudentRow({ studentId, incidents, onSeek }) {
               width: 8,
               height: 8,
               borderRadius: "50%",
-              background: unreviewedCount > 0 ? "#ef4444" : "#16a34a",
-              boxShadow: unreviewedCount > 0 ? "0 0 6px #ef4444" : "none",
+              background: "#ef4444",
+              boxShadow: "0 0 6px #ef4444",
               flexShrink: 0,
             }}
           />
-          <span
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: ".1em",
-              color: "#14532d",
-            }}
-          >
+          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".1em", color: "#14532d" }}>
             {studentId}
           </span>
         </div>
@@ -340,20 +332,6 @@ function StudentRow({ studentId, incidents, onSeek }) {
           >
             {incidents.length} incident{incidents.length !== 1 ? "s" : ""}
           </span>
-          {unreviewedCount > 0 && (
-            <span
-              style={{
-                fontSize: 10,
-                letterSpacing: ".06em",
-                color: "#fff",
-                background: "#ef4444",
-                borderRadius: 999,
-                padding: "2px 8px",
-              }}
-            >
-              {unreviewedCount} UNACK
-            </span>
-          )}
           <span style={{ fontSize: 10, color: "#16a34a" }}>{open ? "▴" : "▾"}</span>
         </div>
       </div>
@@ -369,95 +347,81 @@ function StudentRow({ studentId, incidents, onSeek }) {
             gap: 6,
           }}
         >
-          {incidents.length === 0 ? (
-            <div
-              style={{
-                fontSize: 10,
-                color: "#4ade80",
-                letterSpacing: ".08em",
-                padding: "6px 0",
-              }}
-            >
-              NO INCIDENTS RECORDED
-            </div>
-          ) : (
-            incidents.map((inc, idx) => {
-              const conf = inc.confidence > 0 ? `${(inc.confidence * 100).toFixed(1)}%` : null;
-              const unrev = inc.status === "UNREVIEWED";
-              const ts = Number(inc.timestamp_offset) || 0;
-              return (
+          {incidents.map((inc, idx) => {
+            const conf = inc.confidence > 0 ? `${(inc.confidence * 100).toFixed(1)}%` : null;
+            const ts = Number(inc.timestamp_offset) || 0;
+            return (
+              <div
+                key={inc.id || idx}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                  padding: "7px 10px",
+                  background: "#f0fdf4",
+                  border: "1px solid #bbf7d0",
+                  borderRadius: 3,
+                }}
+              >
                 <div
-                  key={inc.id || idx}
                   style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 8,
-                    padding: "7px 10px",
-                    background: unrev ? "#fef2f2" : "#f0fdf4",
-                    border: `1px solid ${unrev ? "#ef444440" : "#bbf7d0"}`,
-                    borderRadius: 3,
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "#ef4444",
+                    marginTop: 4,
+                    flexShrink: 0,
                   }}
-                >
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background: unrev ? "#ef4444" : "#16a34a",
-                      marginTop: 4,
-                      flexShrink: 0,
-                    }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: unrev ? "#991b1b" : "#166534",
-                        letterSpacing: ".06em",
-                        marginBottom: 2,
-                      }}
-                    >
-                      {inc.incident_type || "UNKNOWN"}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 9,
-                        color: "#4ade80",
-                        letterSpacing: ".06em",
-                        display: "flex",
-                        gap: 8,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      {conf && <span style={{ color: "#15803d" }}>CONF: {conf}</span>}
-                      {inc.camera_id && <span>CAM: {inc.camera_id}</span>}
-                      <span>{fmtDateTime(inc.created_at)}</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => onSeek(ts)}
-                    title={`Jump to ${fmtSec(ts)} in recording`}
-                    style={{
-                      background: "transparent",
-                      border: "1px solid #bbf7d0",
-                      color: "#15803d",
-                      fontSize: 9,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: "#166534",
                       letterSpacing: ".06em",
-                      padding: "3px 8px",
-                      cursor: "pointer",
-                      borderRadius: 3,
-                      fontFamily: "inherit",
-                      flexShrink: 0,
-                      whiteSpace: "nowrap",
+                      marginBottom: 2,
                     }}
                   >
-                    ▶ {fmtSec(ts)}
-                  </button>
+                    {inc.incident_type || "UNKNOWN"}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 9,
+                      color: "#4ade80",
+                      letterSpacing: ".06em",
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {conf && <span style={{ color: "#15803d" }}>CONF: {conf}</span>}
+                    {inc.camera_id && <span>CAM: {inc.camera_id}</span>}
+                    <span>{fmtDateTime(inc.created_at)}</span>
+                  </div>
                 </div>
-              );
-            })
-          )}
+                <button
+                  onClick={() => onSeek(ts)}
+                  title={`Jump to ${fmtSec(ts)} in recording`}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid #bbf7d0",
+                    color: "#15803d",
+                    fontSize: 9,
+                    letterSpacing: ".06em",
+                    padding: "3px 8px",
+                    cursor: "pointer",
+                    borderRadius: 3,
+                    fontFamily: "inherit",
+                    flexShrink: 0,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  ▶ {fmtSec(ts)}
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -768,17 +732,17 @@ function LoadingScreen({ sessionId, initialRecordings, onReady }) {
   );
 }
 
-// ─── Main modal ───────────────────────────────────────────────────────────────
+// ─── Main report page ─────────────────────────────────────────────────────────
 export default function SessionSummaryModal({
   session,
   incidents,
   recordings = [],
   onConfirmEnd,
-  onCancel,
+  onBack,
 }) {
   const [readyRecordings, setReadyRecordings] = useState(null); // null = still loading
 
-  // Reset loading state whenever the modal opens for a new session
+  // Reset loading state whenever the page opens for a new session
   useEffect(() => {
     if (session) setReadyRecordings(null);
   }, [session?.session_id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -791,7 +755,6 @@ export default function SessionSummaryModal({
   );
 
   const totalIncidents = incidents.length;
-  const unreviewedTotal = incidents.filter((i) => i.status === "UNREVIEWED").length;
 
   // Collect all unique camera IDs from recordings and incidents
   const cameraIds = [];
@@ -814,39 +777,29 @@ export default function SessionSummaryModal({
   return (
     <div
       style={{
-        position: "fixed",
-        inset: 0,
-        background: "#dcfce7cc",
-        backdropFilter: "blur(4px)",
-        zIndex: 9000,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
+        minHeight: "100vh",
+        background: "#f0fdf4",
         fontFamily: "'IBM Plex Mono', 'SFMono-Regular', Menlo, Consolas, monospace",
-        overflow: "auto",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <div
         style={{
-          background: "#f7fff9",
-          border: "1px solid #86efac",
-          borderRadius: 12,
-          width: "100%",
-          maxWidth: 960,
-          maxHeight: "94vh",
+          flex: 1,
           display: "flex",
           flexDirection: "column",
-          boxShadow: "0 20px 60px #1665342b",
-          animation: "gatePop 0.3s ease",
-          overflow: "hidden",
+          maxWidth: 1100,
+          width: "100%",
+          margin: "0 auto",
+          padding: "0 16px 32px",
         }}
       >
         {/* ── Header ── */}
         <div
           style={{
-            padding: "16px 20px 12px",
+            padding: "20px 0 16px",
             borderBottom: "1px solid #bbf7d0",
             display: "flex",
             alignItems: "center",
@@ -860,14 +813,14 @@ export default function SessionSummaryModal({
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
-                fontSize: 14,
+                fontSize: 16,
                 fontWeight: 800,
                 letterSpacing: ".12em",
                 color: "#15803d",
                 marginBottom: 4,
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               </svg>
               SESSION SUMMARY REPORT
@@ -878,7 +831,7 @@ export default function SessionSummaryModal({
           </div>
           {readyRecordings !== null && (
             <button
-              onClick={onCancel}
+              onClick={onBack}
               style={{
                 background: "transparent",
                 border: "1px solid #bbf7d0",
@@ -900,34 +853,27 @@ export default function SessionSummaryModal({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
+            gridTemplateColumns: "repeat(2, 1fr)",
             gap: 1,
             background: "#bbf7d0",
-            borderBottom: "1px solid #bbf7d0",
+            margin: "16px 0",
+            borderRadius: 6,
+            overflow: "hidden",
             flexShrink: 0,
           }}
         >
           {[
             { label: "TOTAL INCIDENTS", value: totalIncidents, accent: "#ef4444" },
-            {
-              label: "UNACKNOWLEDGED",
-              value: unreviewedTotal,
-              accent: unreviewedTotal > 0 ? "#ef4444" : "#16a34a",
-            },
             { label: "STUDENTS FLAGGED", value: flaggedStudents, accent: "#0891b2" },
           ].map(({ label, value, accent }) => (
             <div
               key={label}
-              style={{ background: "#f0fdf4", padding: "12px 16px", textAlign: "center" }}
+              style={{ background: "#f0fdf4", padding: "16px 20px", textAlign: "center" }}
             >
-              <div
-                style={{ fontSize: 20, fontWeight: 800, color: accent, letterSpacing: ".04em" }}
-              >
+              <div style={{ fontSize: 24, fontWeight: 800, color: accent, letterSpacing: ".04em" }}>
                 {value}
               </div>
-              <div
-                style={{ fontSize: 9, color: "#4ade80", letterSpacing: ".1em", marginTop: 2 }}
-              >
+              <div style={{ fontSize: 9, color: "#4ade80", letterSpacing: ".1em", marginTop: 2 }}>
                 {label}
               </div>
             </div>
@@ -935,7 +881,7 @@ export default function SessionSummaryModal({
         </div>
 
         {/* ── Body ── */}
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
           {readyRecordings === null ? (
             <LoadingScreen
               sessionId={session.session_id}
@@ -997,7 +943,7 @@ export default function SessionSummaryModal({
         {readyRecordings !== null && (
           <div
             style={{
-              padding: "14px 18px",
+              paddingTop: 24,
               borderTop: "1px solid #bbf7d0",
               display: "flex",
               gap: 10,
@@ -1006,7 +952,7 @@ export default function SessionSummaryModal({
             }}
           >
             <button
-              onClick={onCancel}
+              onClick={onBack}
               style={{
                 background: "transparent",
                 border: "1px solid #bbf7d0",
@@ -1019,7 +965,7 @@ export default function SessionSummaryModal({
                 fontFamily: "inherit",
               }}
             >
-              CANCEL
+              ← BACK TO SESSION
             </button>
             <button
               onClick={onConfirmEnd}
@@ -1037,7 +983,7 @@ export default function SessionSummaryModal({
                 boxShadow: "0 4px 12px #ef444440",
               }}
             >
-              ✕ CONFIRM END SESSION
+              ✕ END SESSION
             </button>
           </div>
         )}

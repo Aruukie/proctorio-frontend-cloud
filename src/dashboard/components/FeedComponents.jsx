@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { resolveUrl } from "../api";
 import { agoStr, fmtDateTime } from "../utils";
 
 function RecordingCard({ rec }) {
@@ -100,17 +99,14 @@ function RecordingCard({ rec }) {
   );
 }
 
-function IncidentRow({ incident, onReview, linkedRec, isLiveRecording }) {
-  const [expanded, setExpanded] = useState(false);
+function IncidentRow({ incident }) {
   const [ago, setAgo] = useState(agoStr(incident.created_at));
-  const [videoErr, setVideoErr] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setAgo(agoStr(incident.created_at)), 5000);
     return () => clearInterval(t);
   }, [incident.created_at]);
 
-  const unrev = incident.status === "UNREVIEWED";
   const title = `${incident.student_id || "UNKNOWN"}: ${incident.incident_type || "UNKNOWN"}`;
   const meta = [
     incident.confidence > 0 ? `${(incident.confidence * 100).toFixed(1)}% confidence` : null,
@@ -122,120 +118,17 @@ function IncidentRow({ incident, onReview, linkedRec, isLiveRecording }) {
 
   return (
     <div className="incident-block" style={{ animation: "fadeIn .4s ease" }}>
-      <div className="incident-header" onClick={() => setExpanded((e) => !e)} style={{ cursor: "pointer" }}>
+      <div className="incident-header">
         <div
           className="incident-dot"
-          style={{
-            background: unrev ? "#ef4444" : "#bbf7d0",
-            border: unrev ? "none" : "1px solid #4ade80",
-            boxShadow: unrev ? "0 0 6px #ef4444" : "none",
-            flexShrink: 0,
-          }}
+          style={{ background: "#ef4444", boxShadow: "0 0 6px #ef4444", flexShrink: 0 }}
         />
-
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="incident-type" style={{ color: unrev ? "#14532d" : "#15803d" }}>
-            {title}
-            {isLiveRecording && (
-              <span
-                style={{
-                  marginLeft: 6,
-                  fontSize: 7,
-                  color: "#ef4444",
-                  letterSpacing: ".12em",
-                  animation: "blink .7s step-end infinite",
-                }}
-              >
-                ● LIVE
-              </span>
-            )}
-            {!isLiveRecording && linkedRec && (
-              <span style={{ marginLeft: 6, fontSize: 7, color: "#0891b2", letterSpacing: ".1em" }}>CLIP</span>
-            )}
-          </div>
+          <div className="incident-type">{title}</div>
           <div className="incident-meta">{meta}</div>
         </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
-          <div className="incident-ago">{ago}</div>
-          {!unrev && <span className="ack-done">✓</span>}
-          <span style={{ fontSize: 8, color: "#16a34a" }}>{expanded ? "▴" : "▾"}</span>
-        </div>
+        <div className="incident-ago">{ago}</div>
       </div>
-
-      {expanded && (
-        <div className="incident-clip">
-          {isLiveRecording ? (
-            <div
-              style={{
-                background: "#d1fae5",
-                border: "1px solid #ef444440",
-                borderRadius: 2,
-                padding: "12px",
-                textAlign: "center",
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              <span className="rec-live-dot" style={{ margin: "0 auto" }} />
-              <div style={{ fontSize: 9, color: "#ef4444", letterSpacing: ".14em" }}>RECORDING IN PROGRESS</div>
-              <div style={{ fontSize: 8, color: "#16a34a" }}>Clip available after recording ends</div>
-            </div>
-          ) : linkedRec?.url && !videoErr ? (
-            <video
-              src={resolveUrl(linkedRec.url)}
-              controls
-              onError={() => setVideoErr(true)}
-              style={{ width: "100%", borderRadius: 2, maxHeight: 150, display: "block" }}
-            />
-          ) : videoErr ? (
-            <div
-              style={{
-                background: "#d1fae5",
-                border: "1px solid #bbf7d0",
-                borderRadius: 2,
-                padding: "10px",
-                textAlign: "center",
-                display: "flex",
-                flexDirection: "column",
-                gap: 7,
-              }}
-            >
-              <div style={{ fontSize: 9, color: "#16a34a", letterSpacing: ".1em" }}>CODEC NOT SUPPORTED</div>
-              <a
-                href={resolveUrl(linkedRec.url)}
-                download={linkedRec.name}
-                style={{
-                  display: "inline-block",
-                  background: "transparent",
-                  border: "1px solid #bbf7d0",
-                  color: "#15803d",
-                  padding: "4px 12px",
-                  fontSize: 9,
-                  letterSpacing: ".12em",
-                  textDecoration: "none",
-                  cursor: "pointer",
-                }}
-              >
-                DOWNLOAD CLIP
-              </a>
-            </div>
-          ) : null}
-
-          {unrev && !isLiveRecording && (
-            <button
-              className="acknowledge-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                onReview(incident.id);
-              }}
-            >
-              ACKNOWLEDGE
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }

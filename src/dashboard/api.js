@@ -38,7 +38,6 @@ const api = {
     fetchJson(withTs(`${BACKEND}/incidents${sid ? `?session_id=${encodeURIComponent(sid)}` : ""}`)),
   recordings: (sid) =>
     fetchJson(withTs(`${BACKEND}/recordings${sid ? `?session_id=${encodeURIComponent(sid)}` : ""}`)),
-  markReviewed: (id) => fetchJson(`${BACKEND}/incidents/${id}/review`, { method: "PATCH" }),
   cameras: () => fetchJson(withTs(`${BACKEND}/cameras`)),
   setView: (id) =>
     fetchJson(`${BACKEND}/cameras/${encodeURIComponent(id)}/set_view`, { method: "POST" }),

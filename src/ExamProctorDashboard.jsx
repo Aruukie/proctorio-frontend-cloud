@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, fireNotification } from "./dashboard/api";
-import { buildPerfSnapshot, findLinkedRecording, fmt, fmtUptime } from "./dashboard/utils";
+import { buildPerfSnapshot, fmt, fmtUptime } from "./dashboard/utils";
 import { dashboardStyles, sessionGateStyles } from "./dashboard/styles";
 import SessionGate from "./dashboard/components/SessionGate";
 import VideoWall from "./dashboard/components/VideoWall";
@@ -357,21 +357,7 @@ export default function ExamProctorDashboard() {
     }
   }, [isRecording, recLabel, recCountdown, recCameraId]);
 
-  const markReviewed = useCallback(async (id) => {
-    setIncidents((prev) => prev.map((i) => (i.id === id ? { ...i, status: "REVIEWED" } : i)));
-    try {
-      const res = await api.markReviewed(id);
-      if (!res.ok) {
-        setIncidents((prev) => prev.map((i) => (i.id === id ? { ...i, status: "UNREVIEWED" } : i)));
-      }
-    } catch {
-      setIncidents((prev) => prev.map((i) => (i.id === id ? { ...i, status: "UNREVIEWED" } : i)));
-    }
-  }, []);
-
   const allRecordings = liveRec ? [liveRec, ...recordings] : recordings;
-  const matchedRecIds = new Set();
-  const availableRecordings = [...allRecordings];
   const sortedIncidents = [...incidents].sort((a, b) => {
     if (incidentSort === "confidence") {
       const confDelta = (b.confidence || 0) - (a.confidence || 0);
@@ -384,25 +370,12 @@ export default function ExamProctorDashboard() {
     return String(b.created_at || "").localeCompare(String(a.created_at || ""));
   });
 
-  const incidentsWithRec = sortedIncidents.map((inc) => {
-    const linked = findLinkedRecording(inc, availableRecordings);
-    if (linked) {
-      const linkedId = linked.id || linked.file_id;
-      matchedRecIds.add(linkedId);
-      const idx = availableRecordings.findIndex((r) => (r.id || r.file_id) === linkedId);
-      if (idx >= 0) availableRecordings.splice(idx, 1);
-    }
-    const isLive = isRecording && liveRec && inc.id === incidents[0]?.id;
-    return { inc, linked, isLive };
-  });
-
-  const unmatchedRecs = availableRecordings.filter((r) => r.status !== "RECORDING" && !matchedRecIds.has(r.id || r.file_id));
+  const completedRecordings = allRecordings.filter((r) => r.status !== "RECORDING");
 
   const isAlert = sysStatus === "ALERT" || sysStatus === "RECORDING";
-  const unreviewed = incidents.filter((i) => i.status === "UNREVIEWED").length;
   const connectedFromList = cameraList.filter((c) => c.status === "CONNECTED").length;
   const dynamicStudentCount = Math.max(studentsTracked, studentsTrackedLive, studentsRegistered, connectedCameras, connectedFromList);
-  const tickerText = `SESSION: ${session?.session_name || "-"} · SYSTEM: ${sysStatus} · INCIDENTS: ${incidents.length} · UNREVIEWED: ${unreviewed} · RECORDINGS: ${recordings.length} · STUDENTS: ${dynamicStudentCount} · POLLING: 2s/5s/8s`;
+  const tickerText = `SESSION: ${session?.session_name || "-"} · SYSTEM: ${sysStatus} · INCIDENTS: ${incidents.length} · RECORDINGS: ${recordings.length} · STUDENTS: ${dynamicStudentCount} · POLLING: 2s/5s/8s`;
 
   if (!session) {
     return (
@@ -413,18 +386,25 @@ export default function ExamProctorDashboard() {
     );
   }
 
+  if (showSummary) {
+    return (
+      <>
+        <style>{`${sessionGateStyles}${dashboardStyles}`}</style>
+        <SessionSummaryModal
+          session={session}
+          incidents={incidents}
+          recordings={recordings}
+          onConfirmEnd={handleConfirmEndSession}
+          onBack={() => setShowSummary(false)}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       <style>{`${sessionGateStyles}${dashboardStyles}`}</style>
       <ToastLayer toast={toast} />
-
-      <SessionSummaryModal
-        session={showSummary ? session : null}
-        incidents={incidents}
-        recordings={recordings}
-        onConfirmEnd={handleConfirmEndSession}
-        onCancel={() => setShowSummary(false)}
-      />
 
       <DevToolsModal
         open={isDevToolsOpen}
@@ -522,12 +502,6 @@ export default function ExamProctorDashboard() {
                 <SectionLabel>SESSION METRICS</SectionLabel>
                 <div className="metrics-grid">
                   <MetricBox label="INCIDENTS" value={incidents.length} sub="this session" accent="#ef4444" />
-                  <MetricBox
-                    label="UNREVIEWED"
-                    value={unreviewed}
-                    sub="pending ack"
-                    accent={unreviewed > 0 ? "#ef4444" : "#16a34a"}
-                  />
                   <MetricBox label="RECORDINGS" value={recordings.length} sub="this session" accent="#0891b2" />
                   <MetricBox label="STUDENTS" value={dynamicStudentCount} sub="dynamic live count" accent="#16a34a" />
                 </div>
@@ -543,7 +517,6 @@ export default function ExamProctorDashboard() {
                 <span className="poll-dot" />
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                {unreviewed > 0 && <span className="tab-badge">{unreviewed} UNACK</span>}
                 {isRecording && <span className="tab-badge" style={{ background: "#ef4444" }}>● REC</span>}
               </div>
             </div>
@@ -566,7 +539,7 @@ export default function ExamProctorDashboard() {
                 </div>
               )}
 
-              {incidents.length === 0 && allRecordings.filter((r) => r.status !== "RECORDING").length === 0 ? (
+              {incidents.length === 0 && completedRecordings.length === 0 ? (
                 <div className="empty-state">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
@@ -576,7 +549,7 @@ export default function ExamProctorDashboard() {
                 </div>
               ) : (
                 <>
-                  {incidentsWithRec.length > 0 && (
+                  {sortedIncidents.length > 0 && (
                     <>
                       <div
                         style={{
@@ -588,7 +561,7 @@ export default function ExamProctorDashboard() {
                         }}
                       >
                         <div style={{ fontSize: 10, letterSpacing: ".08em", color: "#4ade80" }}>
-                          INCIDENT LOG - click to expand clip
+                          INCIDENT LOG
                         </div>
                         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 9, color: "#16a34a", letterSpacing: ".08em" }}>
                           SORT
@@ -611,24 +584,18 @@ export default function ExamProctorDashboard() {
                           </select>
                         </label>
                       </div>
-                      {incidentsWithRec.map(({ inc, linked, isLive }) => (
-                        <IncidentRow
-                          key={inc.id}
-                          incident={inc}
-                          onReview={markReviewed}
-                          linkedRec={linked}
-                          isLiveRecording={isLive}
-                        />
+                      {sortedIncidents.map((inc) => (
+                        <IncidentRow key={inc.id} incident={inc} />
                       ))}
                     </>
                   )}
 
-                  {unmatchedRecs.length > 0 && (
+                  {completedRecordings.length > 0 && (
                     <>
                       <div style={{ fontSize: 10, letterSpacing: ".08em", color: "#4ade80", margin: "12px 0 6px" }}>
-                        OTHER RECORDINGS
+                        RECORDINGS
                       </div>
-                      {unmatchedRecs.map((rec) => (
+                      {completedRecordings.map((rec) => (
                         <StandaloneRecordingRow key={rec.id || rec.file_id} rec={rec} />
                       ))}
                     </>
