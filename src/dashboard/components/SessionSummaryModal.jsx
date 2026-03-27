@@ -593,17 +593,14 @@ function CameraSection({ cameraId, recording, incidents }) {
 function LoadingScreen({ sessionId, initialRecordings, onReady }) {
   const [recs, setRecs] = useState(initialRecordings || []);
   const [elapsed, setElapsed] = useState(0);
-  const TIMEOUT_S = 120;
+  const [polledOnce, setPolledOnce] = useState(false);
+  const TIMEOUT_S = 180;
 
-  const allReady = (list) =>
-    list.length > 0 && list.every((r) => r.browser_ready);
+  // Ready when: polled at least once AND (no recordings OR all have browser_ready)
+  const allReady = (list, didPoll) =>
+    didPoll && (list.length === 0 || list.every((r) => r.browser_ready));
 
   useEffect(() => {
-    if (allReady(recs)) {
-      onReady(recs);
-      return;
-    }
-
     let stopped = false;
     const startTime = Date.now();
 
@@ -616,7 +613,7 @@ function LoadingScreen({ sessionId, initialRecordings, onReady }) {
       const age = (Date.now() - startTime) / 1000;
       if (age >= TIMEOUT_S) {
         clearInterval(tick);
-        onReady(recs); // proceed anyway after timeout
+        onReady(recs);
         return;
       }
       try {
@@ -625,7 +622,8 @@ function LoadingScreen({ sessionId, initialRecordings, onReady }) {
           (r) => !r.session_id || r.session_id === sessionId,
         );
         setRecs(list);
-        if (allReady(list)) {
+        setPolledOnce(true);
+        if (allReady(list, true)) {
           clearInterval(tick);
           onReady(list);
           return;
@@ -633,11 +631,11 @@ function LoadingScreen({ sessionId, initialRecordings, onReady }) {
       } catch {
         // ignore, keep polling
       }
-      if (!stopped) setTimeout(poll, 2000);
+      if (!stopped) setTimeout(poll, 2500);
     };
 
-    // Short initial delay so the backend has time to finalize files
-    const initTimer = setTimeout(poll, 1500);
+    // Short initial delay so ffmpeg has time to start
+    const initTimer = setTimeout(poll, 1000);
 
     return () => {
       stopped = true;
@@ -648,7 +646,14 @@ function LoadingScreen({ sessionId, initialRecordings, onReady }) {
 
   const readyCount = recs.filter((r) => r.browser_ready).length;
   const totalCount = recs.length;
-  const pct = totalCount > 0 ? Math.round((readyCount / totalCount) * 100) : 0;
+  const pct = totalCount > 0 ? Math.round((readyCount / totalCount) * 100) : null;
+
+  // Determine status label
+  const phase = readyCount < totalCount && totalCount > 0
+    ? (elapsed < 5 ? "INITIALIZING GPU TRANSCODE…" : "ENCODING WITH GPU / CPU…")
+    : totalCount === 0 && polledOnce
+    ? "NO RECORDINGS FOUND"
+    : "WAITING FOR RECORDINGS…";
 
   return (
     <div
@@ -685,12 +690,16 @@ function LoadingScreen({ sessionId, initialRecordings, onReady }) {
         PROCESSING RECORDINGS
       </div>
 
+      <div style={{ fontSize: 9, color: "#4ade80", letterSpacing: ".1em" }}>
+        {phase}
+      </div>
+
       {/* Progress bar */}
       {totalCount > 0 && (
-        <div style={{ width: "100%", maxWidth: 320 }}>
+        <div style={{ width: "100%", maxWidth: 340 }}>
           <div
             style={{
-              height: 6,
+              height: 8,
               background: "#dcfce7",
               border: "1px solid #bbf7d0",
               borderRadius: 999,
@@ -701,9 +710,9 @@ function LoadingScreen({ sessionId, initialRecordings, onReady }) {
               style={{
                 height: "100%",
                 width: `${pct}%`,
-                background: "#16a34a",
+                background: "linear-gradient(90deg, #16a34a, #4ade80)",
                 borderRadius: 999,
-                transition: "width 0.4s ease",
+                transition: "width 0.6s ease",
               }}
             />
           </div>
@@ -714,26 +723,30 @@ function LoadingScreen({ sessionId, initialRecordings, onReady }) {
               color: "#4ade80",
               letterSpacing: ".08em",
               textAlign: "center",
+              display: "flex",
+              justifyContent: "space-between",
             }}
           >
-            {readyCount} / {totalCount} CAMERAS READY · {elapsed}s elapsed
+            <span>{readyCount} / {totalCount} CAMERAS READY</span>
+            <span>{elapsed}s elapsed</span>
           </div>
         </div>
       )}
 
       {totalCount === 0 && (
         <div style={{ fontSize: 9, color: "#4ade80", letterSpacing: ".08em" }}>
-          WAITING FOR RECORDINGS · {elapsed}s elapsed
+          {elapsed}s elapsed
         </div>
       )}
 
-      <div style={{ fontSize: 9, color: "#86efac", letterSpacing: ".06em", textAlign: "center", maxWidth: 280 }}>
-        Converting session recordings to browser-compatible format.
+      <div style={{ fontSize: 9, color: "#86efac", letterSpacing: ".06em", textAlign: "center", maxWidth: 300 }}>
+        Converting recordings to browser-compatible H.264.
         <br />
-        This may take a moment depending on session length.
+        GPU acceleration used when available (NVENC).
       </div>
 
-      {elapsed >= 10 && readyCount === 0 && (
+      {/* Skip button after 15s with no progress */}
+      {elapsed >= 15 && readyCount === 0 && (
         <button
           onClick={() => onReady(recs)}
           style={{
