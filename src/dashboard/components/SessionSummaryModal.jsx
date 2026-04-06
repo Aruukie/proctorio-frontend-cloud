@@ -9,6 +9,14 @@ const fmtSec = (s) => {
   return `${m}:${String(sec).padStart(2, "0")}`;
 };
 
+const fmtMetric = (value, { asPercent = true, digits = 1 } = {}) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "N/A";
+  if (!asPercent) return n.toFixed(digits);
+  const pct = n <= 1 ? n * 100 : n;
+  return `${pct.toFixed(digits)}%`;
+};
+
 // ─── Video player + timeline with incident markers ────────────────────────────
 function VideoTimeline({ recording, incidents, seekTick }) {
   const videoRef = useRef(null);
@@ -771,6 +779,10 @@ export default function SessionSummaryModal({
   if (cameraIds.length === 0 && incidents.length > 0) cameraIds.push("ALL");
 
   const flaggedStudents = new Set(incidents.map((i) => i.student_id || "UNKNOWN")).size;
+  const metrics = session?.metrics || session?.model_metrics || session?.report_metrics || {};
+  const recallMetric = metrics.recall ?? session?.recall;
+  const precisionMetric = metrics.precision ?? session?.precision;
+  const aucMetric = metrics.auc_roc ?? metrics.auc ?? session?.auc_roc ?? session?.auc;
 
   const finalRecordings = readyRecordings || sessionRecordings;
 
@@ -881,6 +893,73 @@ export default function SessionSummaryModal({
         </div>
 
         {/* ── Body ── */}
+        <div
+          style={{
+            border: "1px solid #bbf7d0",
+            borderRadius: 6,
+            background: "#f0fdf4",
+            padding: "12px 14px",
+            marginBottom: 14,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: ".12em",
+              color: "#15803d",
+              marginBottom: 10,
+            }}
+          >
+            MODEL PERFORMANCE METRICS
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+              gap: 8,
+            }}
+          >
+            {[
+              {
+                label: "RECALL (SENSITIVITY)",
+                value: fmtMetric(recallMetric, { asPercent: true, digits: 1 }),
+                desc: "Crucial for security; how many real suspicious events were caught. Missing a real crime (false negative) is usually worse than a false alarm.",
+              },
+              {
+                label: "PRECISION",
+                value: fmtMetric(precisionMetric, { asPercent: true, digits: 1 }),
+                desc: "How often system alerts are actually correct. Higher precision reduces alarm fatigue for security personnel.",
+              },
+              {
+                label: "AUC-ROC",
+                value: fmtMetric(aucMetric, { asPercent: false, digits: 3 }),
+                desc: "Overall ability to distinguish normal vs suspicious activity across different sensitivity settings.",
+              },
+            ].map((m) => (
+              <div
+                key={m.label}
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #dcfce7",
+                  borderRadius: 4,
+                  padding: "10px 10px 9px",
+                }}
+              >
+                <div style={{ fontSize: 9, color: "#166534", letterSpacing: ".08em", marginBottom: 5 }}>
+                  {m.label}
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "#15803d", marginBottom: 5 }}>
+                  {m.value}
+                </div>
+                <div style={{ fontSize: 9, lineHeight: 1.45, color: "#4ade80" }}>
+                  {m.desc}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
           {readyRecordings === null ? (
             <LoadingScreen
