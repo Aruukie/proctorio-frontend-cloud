@@ -17,6 +17,8 @@ const fmtMetric = (value, { asPercent = true, digits = 1 } = {}) => {
   return `${pct.toFixed(digits)}%`;
 };
 
+const normLabel = (v) => String(v || "").trim().toLowerCase();
+
 // ─── Video player + timeline with incident markers ────────────────────────────
 function VideoTimeline({ recording, incidents, seekTick }) {
   const videoRef = useRef(null);
@@ -780,9 +782,28 @@ export default function SessionSummaryModal({
 
   const flaggedStudents = new Set(incidents.map((i) => i.student_id || "UNKNOWN")).size;
   const metrics = session?.metrics || session?.model_metrics || session?.report_metrics || {};
-  const recallMetric = metrics.recall ?? session?.recall;
-  const precisionMetric = metrics.precision ?? session?.precision;
-  const aucMetric = metrics.auc_roc ?? metrics.auc ?? session?.auc_roc ?? session?.auc;
+  const globalRecallMetric = metrics.recall ?? session?.recall;
+  const globalPrecisionMetric = metrics.precision ?? session?.precision;
+  const globalAucMetric = metrics.auc_roc ?? metrics.auc ?? session?.auc_roc ?? session?.auc;
+  const metricsByTypeRaw =
+    metrics.by_incident_type ||
+    metrics.by_type ||
+    metrics.per_class ||
+    metrics.classes ||
+    session?.metrics_by_type ||
+    session?.report_metrics_by_type ||
+    {};
+  const metricsByType = {};
+  for (const [k, v] of Object.entries(metricsByTypeRaw || {})) {
+    metricsByType[normLabel(k)] = v || {};
+  }
+  const detectedActivityTypes = Array.from(
+    new Set(
+      incidents
+        .map((i) => i?.incident_type)
+        .filter((t) => t != null && String(t).trim() !== ""),
+    ),
+  ).sort((a, b) => String(a).localeCompare(String(b)));
 
   const finalRecordings = readyRecordings || sessionRecordings;
 
@@ -915,48 +936,97 @@ export default function SessionSummaryModal({
           </div>
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+              display: "flex",
+              flexDirection: "column",
               gap: 8,
             }}
           >
-            {[
-              {
-                label: "RECALL (SENSITIVITY)",
-                value: fmtMetric(recallMetric, { asPercent: true, digits: 1 }),
-                desc: "Crucial for security; how many real suspicious events were caught. Missing a real crime (false negative) is usually worse than a false alarm.",
-              },
-              {
-                label: "PRECISION",
-                value: fmtMetric(precisionMetric, { asPercent: true, digits: 1 }),
-                desc: "How often system alerts are actually correct. Higher precision reduces alarm fatigue for security personnel.",
-              },
-              {
-                label: "AUC-ROC",
-                value: fmtMetric(aucMetric, { asPercent: false, digits: 3 }),
-                desc: "Overall ability to distinguish normal vs suspicious activity across different sensitivity settings.",
-              },
-            ].map((m) => (
+            {detectedActivityTypes.length === 0 ? (
               <div
-                key={m.label}
                 style={{
                   background: "#ffffff",
                   border: "1px solid #dcfce7",
                   borderRadius: 4,
-                  padding: "10px 10px 9px",
+                  padding: "10px",
+                  fontSize: 10,
+                  color: "#166534",
+                  letterSpacing: ".06em",
                 }}
               >
-                <div style={{ fontSize: 9, color: "#166534", letterSpacing: ".08em", marginBottom: 5 }}>
-                  {m.label}
-                </div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: "#15803d", marginBottom: 5 }}>
-                  {m.value}
-                </div>
-                <div style={{ fontSize: 9, lineHeight: 1.45, color: "#4ade80" }}>
-                  {m.desc}
-                </div>
+                No suspicious activity incidents detected in this session.
               </div>
-            ))}
+            ) : (
+              detectedActivityTypes.map((activityType) => {
+                const perType = metricsByType[normLabel(activityType)] || {};
+                const recallValue = perType.recall ?? perType.sensitivity ?? globalRecallMetric;
+                const precisionValue = perType.precision ?? globalPrecisionMetric;
+                const aucValue = perType.auc_roc ?? perType.auc ?? globalAucMetric;
+                return (
+                  <div
+                    key={activityType}
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid #dcfce7",
+                      borderRadius: 4,
+                      padding: "10px 10px 9px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "#166534",
+                        letterSpacing: ".1em",
+                        marginBottom: 8,
+                        fontWeight: 700,
+                      }}
+                    >
+                      ACTIVITY: {activityType}
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+                        gap: 8,
+                      }}
+                    >
+                      <div style={{ border: "1px solid #dcfce7", borderRadius: 4, padding: "8px 9px" }}>
+                        <div style={{ fontSize: 9, color: "#166534", letterSpacing: ".08em", marginBottom: 4 }}>
+                          RECALL (SENSITIVITY)
+                        </div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: "#15803d", marginBottom: 4 }}>
+                          {fmtMetric(recallValue, { asPercent: true, digits: 1 })}
+                        </div>
+                        <div style={{ fontSize: 9, lineHeight: 1.45, color: "#4ade80" }}>
+                          Crucial for security; how many real suspicious events were caught. Missing a real crime (false negative) is usually worse than a false alarm.
+                        </div>
+                      </div>
+                      <div style={{ border: "1px solid #dcfce7", borderRadius: 4, padding: "8px 9px" }}>
+                        <div style={{ fontSize: 9, color: "#166534", letterSpacing: ".08em", marginBottom: 4 }}>
+                          PRECISION
+                        </div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: "#15803d", marginBottom: 4 }}>
+                          {fmtMetric(precisionValue, { asPercent: true, digits: 1 })}
+                        </div>
+                        <div style={{ fontSize: 9, lineHeight: 1.45, color: "#4ade80" }}>
+                          How often system alerts are actually correct. Higher precision reduces alarm fatigue for security personnel.
+                        </div>
+                      </div>
+                      <div style={{ border: "1px solid #dcfce7", borderRadius: 4, padding: "8px 9px" }}>
+                        <div style={{ fontSize: 9, color: "#166534", letterSpacing: ".08em", marginBottom: 4 }}>
+                          AUC-ROC
+                        </div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: "#15803d", marginBottom: 4 }}>
+                          {fmtMetric(aucValue, { asPercent: false, digits: 3 })}
+                        </div>
+                        <div style={{ fontSize: 9, lineHeight: 1.45, color: "#4ade80" }}>
+                          Overall ability to distinguish normal vs suspicious activity across different sensitivity settings.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
